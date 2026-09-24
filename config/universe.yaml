@@ -1,0 +1,81 @@
+# Universe settings for the Nifty Smallcap 100.
+#
+# The constituent list itself lives in reference/ind_niftysmallcap100list.csv
+# (downloaded from NSE, snapshot 2026-09-24). `ere universe refresh` re-downloads it.
+# The index rebalances semi-annually (March / September), so re-check after each review.
+#
+# Everything below is an OVERRIDE on top of that CSV. Stocks not listed here get:
+#   valuation_model: dcf, short_history: false
+
+index_name: NIFTY SMALLCAP 100
+constituents_csv: reference/ind_niftysmallcap100list.csv
+constituents_url: https://nsearchives.nseindia.com/content/indices/ind_niftysmallcap100list.csv
+snapshot_date: 2026-09-24
+
+# valuation_model decides which valuation path a stock takes:
+#   dcf              - FCFF DCF + EV/EBITDA & P/E multiples (default)
+#   residual_income  - banks, NBFCs, HFCs: excess-return model + P/B vs ROE
+#   insurance        - residual income on book + P/B & P/E (embedded value not available publicly in XBRL)
+#   sotp             - holding companies: sum of listed/unlisted stakes minus holdco discount
+#   ev_sales         - loss-making / pre-profit: reverse DCF + EV/Sales only; a DCF is shown as scenario-only
+valuation_models:
+  residual_income:
+    # Banks
+    - BANDHANBNK
+    - CUB
+    - IDBI
+    - KARURVYSYA
+    - RBLBANK
+    # NBFCs / HFCs / MFIs
+    - APTUS
+    - CGCL
+    - CREDITACC
+    - FIVESTAR
+    - IFCI
+    - IIFL
+    - JMFINANCIL
+    - MANAPPURAM
+    - PIRAMALFIN
+    - PNBHOUSING
+    - POONAWALLA
+  insurance:
+    - STARHEALTH
+  sotp:
+    - CHOLAHLDNG
+  ev_sales:
+    - OLAELEC
+    - ATHERENERG
+    - MEESHO
+    - URBANCO
+    - PWL
+    - FIRSTCRY
+    - PINELABS
+  # Asset-light financials (CDSL, CAMS, KFINTECH, ANGELONE, ANANDRATHI, NUVAMA)
+  # intentionally stay on the default dcf path: they are fee businesses, not lenders.
+
+# Listed in 2024 or later (or restructured), so fewer than 5 years of filings exist.
+# Hint only: the analytics layer also measures actual history length from the data.
+short_history:
+  - AFCONS
+  - ATHERENERG
+  - COHANCE
+  - FIRSTCRY
+  - IKS
+  - JSWCEMENT
+  - MEESHO
+  - OLAELEC
+  - PINELABS
+  - PIRAMALFIN
+  - PWL
+  - SAGILITY
+  - SAILIFE
+  - TENNIND
+  - URBANCO
+
+# Manual peer overrides: symbol -> list of peer symbols (may be outside the index).
+# Default peers = same NSE industry within this universe.
+peer_overrides:
+  ANGELONE: [MOTILALOFS, "5PAISA"]
+  CDSL: [NSDL, BSE, MCX]
+  CAMS: [KFINTECH]
+  KFINTECH: [CAMS]

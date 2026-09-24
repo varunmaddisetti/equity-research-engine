@@ -1,0 +1,58 @@
+# Valuation assumptions. Every report prints the values it used, so change them here, not in code.
+
+as_of: 2026-09-24
+
+cost_of_capital:
+  # India 10-year G-Sec yield. ~7.04% on 2026-09-22. Refresh monthly (RBI DBIE / CCIL).
+  risk_free_rate: 0.0704
+  # Mature-market-adjusted India equity risk premium. Review each January and July.
+  equity_risk_premium: 0.065
+  # Extra premium for smallcaps. Debated in the literature; set to 0 to switch off.
+  size_premium: 0.015
+  # Beta: weekly returns vs NIFTY SMALLCAP 100 (primary) and NIFTY 50 (shown for reference).
+  beta_lookback_weeks: 104
+  beta_benchmark: NIFTY SMALLCAP 100
+  blume_adjust: true          # adjusted beta = 0.67 * raw + 0.33
+  beta_floor: 0.6
+  beta_cap: 2.0
+  # Pre-tax cost of debt = interest / average gross debt, clipped to this band.
+  cost_of_debt_floor: 0.075
+  cost_of_debt_cap: 0.16
+  marginal_tax_rate: 0.2517   # new-regime corporate rate incl. surcharge & cess
+
+dcf:
+  explicit_years: 10          # years 1-5 fade from recent growth, 6-10 fade to terminal
+  terminal_growth: 0.05
+  terminal_growth_max_spread_below_rf: 0.01   # g is capped at rf - 1%
+  margin_mean_reversion_years: 5
+  sensitivity:
+    wacc_step: 0.01
+    growth_step: 0.01
+    grid_size: 5
+  scenarios:
+    bear:  {growth_multiplier: 0.6, margin_shift: -0.02, terminal_growth: 0.04}
+    base:  {growth_multiplier: 1.0, margin_shift:  0.00, terminal_growth: 0.05}
+    bull:  {growth_multiplier: 1.3, margin_shift:  0.02, terminal_growth: 0.06}
+
+residual_income:
+  explicit_years: 10
+  roe_fade_to_spread_over_ke: 0.02   # long-run ROE = Ke + 2%
+  payout_ratio_default: 0.20
+
+multiples:
+  history_years: 5
+  band_std: 1.0
+  min_peers: 3                 # fewer peers -> use own-history band only
+
+sotp:
+  holdco_discount: 0.50
+
+quality_flags:
+  promoter_pledge_pct_max: 10.0
+  promoter_holding_drop_pp_1y: 2.0
+  cfo_to_pat_3y_min: 0.7
+  receivable_days_yoy_increase_max: 0.20
+  contingent_liab_to_networth_max: 0.10
+  # Smallcap-specific
+  min_median_daily_traded_value_cr: 5.0   # liquidity flag
+  flag_asm_gsm_surveillance: true         # flag if on NSE ASM/GSM surveillance lists

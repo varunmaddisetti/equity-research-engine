@@ -1,0 +1,51 @@
+# Project plan (v1)
+
+## Decisions
+
+| Decision | Choice | Why |
+|---|---|---|
+| Universe | **Nifty Smallcap 100** (snapshot 2026-09-24) | Where public-data research adds the most value (thin analyst coverage). Smallcap 250 is the scale-up once v1 is stable. |
+| Repo | **Public**, MIT licence | Portfolio value. Data is gitignored and rebuilt from source. |
+| Reports | Static HTML/PDF on **GitHub Pages** | Valuation *ranges and assumptions only* — no ratings, no target prices, disclaimer on every page (SEBI Research Analyst rules). |
+| LLM narrative | **Deferred to v1.1**, off by default | Numbers first; LLM text only ever describes computed figures. |
+| Timeline | **~12 weeks** at 10–12 hrs/week | Smallcap data is messier than large-cap; M2 gets extra time. |
+
+## What changes because it is smallcap
+
+- **Five valuation paths, not two.** `config/universe.yaml` routes each stock:
+  `dcf` (default, 75), `residual_income` (16 banks/NBFCs/HFCs), `insurance` (STARHEALTH),
+  `sotp` (CHOLAHLDNG), `ev_sales` (7 loss-making or pre-profit names such as OLAELEC and MEESHO).
+  Asset-light financials (CDSL, CAMS, KFINTECH…) stay on DCF: they are fee businesses.
+- **Short histories.** 15 stocks listed or restructured in 2024 or later. Reports must
+  say so, and the multiples band falls back to peers only.
+- **Liquidity and surveillance matter.** Extra flags: median daily traded value below ₹5 cr,
+  and presence on NSE ASM/GSM lists.
+- **Beta benchmark** = Nifty Smallcap 100 (Nifty 50 beta also shown). An optional 1.5% size premium sits in config.
+- **Survivorship bias.** The index rebalances in March and September; `index_membership`
+  records entries and exits so the M7 backtest only uses stocks that were in the index at the time.
+
+## Milestones
+
+| # | Weeks | Deliverable | Done when |
+|---|---|---|---|
+| **M0** | 1 | Skeleton, config, universe, DuckDB schema, CLI, CI | `pytest` green; `ere config check` and `ere db sync-universe` work ✅ |
+| **M1** | 2–3 | Prices: NSE bhavcopy (legacy + UDiFF from Jul 2024), index closes, corporate actions, adjusted prices | 10 years for 100 stocks loaded; no unexplained daily move >40% on any ex-date |
+| **M2** | 4–6 | Fundamentals: results XBRL (consolidated + standalone), tag mapping, restatements kept | Golden tests pass for 5 stocks (±0.5%); ≥90% field fill for the rest; unmapped tags logged |
+| **M3** | 7 | Shareholding, ratios, quality flags, beta, liquidity, peers | Ratios hand-checked for 5 stocks |
+| **M4** | 8–9 | DCF (scenarios, 5×5 sensitivity, reverse DCF), residual income, multiples, SOTP, EV/Sales | Toy cases match an Excel model exactly |
+| **M5** | 10 | Report template + charts + PDF | `ere report KAYNES` gives a clean 6–10 page report |
+| **M6** | 11 | Weekly GitHub Action, Pages index of 100 reports, README | Unattended refresh succeeds |
+| **M7** | 12+ | Point-in-time backtest: do stocks below their valuation range outperform over 12 months? | Quintile spreads + IC, no look-ahead, survivorship-free |
+
+Golden-test stocks for M2 (chosen to cover every path): **KAYNES** (DCF, capex-heavy growth),
+**NATCOPHARM** (DCF, pharma), **KARURVYSYA** (bank), **MANAPPURAM** (NBFC), **CDSL** (asset-light financial).
+
+## Risks
+
+| Risk | Mitigation |
+|---|---|
+| NSE blocks or rate-limits requests | `ere.http.ExchangeClient`: cookie priming, a request every 0.75 s or slower, backoff; archives first; BSE fallback |
+| XBRL tags inconsistent across filers | Candidate-tag lists in `xbrl_mapping.yaml`; unmapped-tag log; golden tests |
+| Restatements | `financials` keeps every filing_date; analysis uses the latest filing available *as of* a date |
+| Index rebalance breaks config | `load_universe` fails loudly on stale overrides; `ere universe refresh` shows the diff |
+| Scope creep | No new features before M6 |

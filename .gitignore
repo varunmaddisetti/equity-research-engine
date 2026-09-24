@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+
+# Data is rebuilt from public sources; never commit it.
+data/raw/*
+data/processed/*
+data/*.duckdb
+data/*.duckdb.wal
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Generated reports go to GitHub Pages via CI, not to main.
+reports/*
+!reports/.gitkeep
+
+.ipynb_checkpoints/
+.env
+.DS_Store

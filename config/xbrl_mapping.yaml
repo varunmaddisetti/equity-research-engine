@@ -1,0 +1,63 @@
+# XBRL tag -> standard field mapping (starter set).
+#
+# Tags are from the SEBI/NSE "financial results" XBRL taxonomy (Ind AS, non-banking and banking formats).
+# STATUS: unvalidated starter list. M2 validates each tag against real filings and logs
+# every unmapped tag to data/processed/unmapped_tags.parquet so this file grows iteratively.
+# A standard field may list several candidate tags; the first one present in a filing wins.
+
+income_statement:
+  revenue:              [RevenueFromOperations]
+  other_income:         [OtherIncome]
+  total_income:         [Income]
+  cost_of_materials:    [CostOfMaterialsConsumed]
+  purchases_traded:     [PurchasesOfStockInTrade]
+  inventory_change:     [ChangesInInventoriesOfFinishedGoodsWorkInProgressAndStockInTrade]
+  employee_cost:        [EmployeeBenefitExpense]
+  finance_cost:         [FinanceCosts]
+  depreciation:         [DepreciationDepletionAndAmortisationExpense]
+  other_expenses:       [OtherExpenses]
+  total_expenses:       [Expenses]
+  exceptional_items:    [ExceptionalItemsBeforeTax]
+  pbt:                  [ProfitBeforeTax]
+  tax:                  [TaxExpense]
+  pat:                  [ProfitLossForPeriod]
+  pat_owners:           [ProfitOrLossAttributableToOwnersOfParent]
+  eps_basic:            [BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations, BasicEarningsLossPerShareFromContinuingOperations]
+  paid_up_capital:      [PaidUpValueOfEquityShareCapital]
+  face_value:           [FaceValueOfEquityShareCapital]
+
+# Bank results use a different format (Schedule III banking).
+banking:
+  interest_earned:      [InterestEarned]
+  interest_expended:    [InterestExpended]
+  operating_profit:     [OperatingProfitBeforeProvisionAndContingencies]
+  provisions:           [ProvisionsOtherThanTaxAndContingencies]
+  gross_npa:            [GrossNonPerformingAssets]
+  net_npa:              [NonPerformingAssets]
+  gross_npa_pct:        [PercentageOfGrossNpa]
+  net_npa_pct:          [PercentageOfNpa]
+  return_on_assets:     [ReturnOnAssets]
+  cet1_ratio:           [CET1Ratio]
+
+# Balance sheet and cash flow are only filed half-yearly / annually in results XBRL.
+balance_sheet:
+  total_equity:         [EquityAttributableToOwnersOfParent, Equity]
+  minority_interest:    [NonControllingInterest]
+  borrowings_noncurrent: [BorrowingsNoncurrent]
+  borrowings_current:   [BorrowingsCurrent]
+  cash:                 [CashAndCashEquivalents]
+  bank_balances_other:  [BankBalanceOtherThanCashAndCashEquivalents]
+  current_investments:  [CurrentInvestments]
+  trade_receivables:    [TradeReceivablesCurrent]
+  inventories:          [Inventories]
+  trade_payables:       [TradePayablesCurrent]
+  total_assets:         [Assets]
+  ppe:                  [PropertyPlantAndEquipment]
+  cwip:                 [CapitalWorkInProgress]
+
+cash_flow:
+  cfo:                  [NetCashFlowsFromUsedInOperatingActivities]
+  capex:                [PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities]
+  cfi:                  [NetCashFlowsFromUsedInInvestingActivities]
+  cff:                  [NetCashFlowsFromUsedInFinancingActivities]
+  dividends_paid:       [DividendsPaidClassifiedAsFinancingActivities]
