@@ -16,13 +16,14 @@ dependencies = [
     "duckdb>=1.0",
     "httpx>=0.27",
     "tenacity>=8.2",
+    "jinja2>=3.1",
+    "matplotlib>=3.8",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.5", "respx>=0.21"]
-# Added in later milestones:
-# fundamentals = ["lxml", "pdfplumber", "pandera"]
-# report       = ["jinja2", "plotly", "kaleido", "weasyprint"]
+# Optional PDF export of reports (needs system libraries: `brew install pango` on macOS)
+pdf = ["weasyprint>=62"]
 
 [project.scripts]
 ere = "ere.cli:app"

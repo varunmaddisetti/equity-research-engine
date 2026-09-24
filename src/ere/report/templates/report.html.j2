@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ s.symbol }} research report</title>
+<meta name="description" content="{{ s.name }}: public-data research report (educational, not investment advice)">
+<style>{{ css | safe }}</style>
+</head>
+<body>
+<main>
+<p class="muted noprint"><a href="index.html">← All stocks</a></p>
+<h1>{{ s.name }} <span class="muted">({{ s.symbol }})</span></h1>
+<p class="sub">{{ s.industry }} · valuation path: {{ s.valuation_model_label }} · data as of {{ as_of }}</p>
+<div class="disclaimer">{{ disclaimer }}</div>
+
+<h2 id="snapshot">1. Snapshot</h2>
+<div class="tiles">
+{% for t in tiles %}<div class="tile"><div class="k">{{ t.k }}</div><div class="v">{{ t.v }}</div></div>
+{% endfor %}</div>
+<div class="badges">
+{% for f in flags_on %}<span class="badge flag" title="{{ f.note }}">⚑ {{ f.label }}</span>{% endfor %}
+{% if not flags_on %}<span class="badge ok">✓ no quality flags triggered</span>{% endif %}
+</div>
+
+<h2 id="business">2. Business overview</h2>
+{% if overview %}{% for para in overview %}<p>{{ para }}</p>{% endfor %}
+{% else %}<p class="muted">No overview written yet (add config/overviews/{{ s.symbol }}.md).</p>{% endif %}
+
+<h2 id="financials">3. Financial summary</h2>
+{% if fy_table.rows %}
+<h3>Fiscal years (Rs crore unless stated)</h3>
+<div class="scroll"><table>
+<tr><th></th>{% for c in fy_table.cols %}<th>{{ c }}</th>{% endfor %}</tr>
+{% for r in fy_table.rows %}<tr><td>{{ r.label }}</td>{% for v in r.vals %}<td>{{ v }}</td>{% endfor %}</tr>
+{% endfor %}</table></div>
+{% if charts.revenue %}<div class="card">{{ charts.revenue | safe }}</div>{% endif %}
+{% else %}<p class="muted">No annual results in machine-readable form yet.</p>{% endif %}
+{% if q_table.rows %}
+<h3>Last quarters (Rs crore)</h3>
+<div class="scroll"><table>
+<tr><th></th>{% for c in q_table.cols %}<th>{{ c }}</th>{% endfor %}</tr>
+{% for r in q_table.rows %}<tr><td>{{ r.label }}</td>{% for v in r.vals %}<td>{{ v }}</td>{% endfor %}</tr>
+{% endfor %}</table></div>
+{% endif %}
+
+<h2 id="ratios">4. Ratio trends</h2>
+{% if ratio_table.rows %}
+<div class="scroll"><table>
+<tr><th></th>{% for c in ratio_table.cols %}<th>{{ c }}</th>{% endfor %}</tr>
+{% for r in ratio_table.rows %}<tr><td>{{ r.label }}</td>{% for v in r.vals %}<td>{{ v }}</td>{% endfor %}</tr>
+{% endfor %}</table></div>
+{% if charts.ratios %}<div class="card">{{ charts.ratios | safe }}</div>{% endif %}
+{% else %}<p class="muted">Not enough years of data.</p>{% endif %}
+
+<h2 id="balance">5. Balance sheet and leverage</h2>
+<div class="scroll"><table>
+{% for k, v in balance %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}
+</table></div>
+
+<h2 id="shareholding">6. Shareholding</h2>
+{% if shp_table.rows %}
+<div class="scroll"><table>
+<tr><th>Quarter</th><th>Promoter %</th><th>Public %</th><th>Promoter shares pledged %</th></tr>
+{% for r in shp_table.rows %}<tr><td>{{ r[0] }}</td><td>{{ r[1] }}</td><td>{{ r[2] }}</td><td>{{ r[3] }}</td></tr>
+{% endfor %}</table></div>
+{% else %}<p class="muted">No shareholding data loaded (run <code>ere ingest shareholding</code>).</p>{% endif %}
+
+<h2 id="valuation">7. Valuation</h2>
+<p>Ranges, not a target: each method below answers "what is the business worth if these assumptions hold?". The assumptions are shown so they can be challenged.</p>
+{% if charts.football %}<div class="card">{{ charts.football | safe }}</div>{% endif %}
+{% if ff_table %}
+<div class="scroll"><table>
+<tr><th>Method</th><th>Low</th><th>Mid</th><th>High</th></tr>
+{% for r in ff_table %}<tr><td>{{ r.label }}</td><td>{{ r.low }}</td><td>{{ r.mid }}</td><td>{{ r.high }}</td></tr>{% endfor %}
+<tr><td>Current price</td><td colspan="3">{{ price_fmt }}</td></tr>
+</table></div>
+{% else %}<p class="muted">No valuation could be computed with the data available.</p>{% endif %}
+
+{% if wacc %}
+<h3>Cost of capital</h3>
+<div class="scroll"><table>
+{% for k, v in wacc %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+
+{% if dcf %}
+<h3>DCF (FCFF, 10 years + terminal value)</h3>
+<div class="scroll"><table>
+<tr><th>Assumption</th>{% for sc in dcf.scenarios %}<th>{{ sc.name }}</th>{% endfor %}</tr>
+{% for label, key in dcf.rows %}<tr><td>{{ label }}</td>{% for sc in dcf.scenarios %}<td>{{ sc.vals[key] }}</td>{% endfor %}</tr>{% endfor %}
+</table></div>
+{% if dcf.reverse %}<p><strong>Reverse DCF:</strong> the current price implies year-1 revenue growth of about <strong>{{ dcf.reverse }}</strong>, fading to the terminal rate, with the base-case margins.</p>{% endif %}
+{% for n in dcf.notes %}<p class="muted">Note: {{ n }}</p>{% endfor %}
+{% if dcf.grid %}
+<details><summary>Sensitivity: value per share by WACC (rows) and terminal growth (columns)</summary>
+<div class="scroll"><table>
+<tr><th>WACC \ g</th>{% for g in dcf.grid.g %}<th>{{ g }}</th>{% endfor %}</tr>
+{% for row in dcf.grid.rows %}<tr><td>{{ row.w }}</td>{% for c in row.cells %}<td class="{{ 'base' if c.base else '' }}">{{ c.v }}</td>{% endfor %}</tr>{% endfor %}
+</table></div></details>
+{% endif %}
+{% endif %}
+{% if dcf_skipped %}<p class="muted">DCF not run: {{ dcf_skipped }}</p>{% endif %}
+
+{% if ri %}
+<h3>Residual income (excess return on book value)</h3>
+<div class="scroll"><table>
+<tr><th>Assumption</th>{% for sc in ri.scenarios %}<th>{{ sc.name }}</th>{% endfor %}</tr>
+{% for label, key in ri.rows %}<tr><td>{{ label }}</td>{% for sc in ri.scenarios %}<td>{{ sc.vals[key] }}</td>{% endfor %}</tr>{% endfor %}
+</table></div>
+{% endif %}
+
+{% if sotp %}
+<h3>Sum of the parts</h3>
+{% if sotp.missing %}<p class="muted">SOTP needs inputs in config/sotp.yaml: {{ sotp.missing | join('; ') }}</p>
+{% else %}<div class="scroll"><table>{% for p in sotp.parts %}<tr><td>{{ p.name }} ({{ p.type }})</td><td>{{ p.value }}</td></tr>{% endfor %}</table></div>{% endif %}
+{% endif %}
+
+{% if multiples %}
+<h3>Multiples</h3>
+<div class="scroll"><table>
+<tr><th>Multiple</th><th>Current</th><th>Own band low</th><th>Own median</th><th>Own band high</th><th>Peer median</th></tr>
+{% for r in multiples %}<tr><td>{{ r.name }}</td><td>{{ r.current }}</td><td>{{ r.low }}</td><td>{{ r.mid }}</td><td>{{ r.high }}</td><td>{{ r.peer }}</td></tr>{% endfor %}
+</table></div>
+<p class="muted">Own band: median ± {{ band_std }} standard deviation of month-end multiples over {{ band_years }} years, each computed from results filed by that date. Peers: {{ peers | join(', ') if peers else 'none in the universe' }}.</p>
+{% endif %}
+
+<h2 id="risk">8. Price and risk</h2>
+{% if charts.price %}<div class="card">{{ charts.price | safe }}</div>{% endif %}
+<div class="scroll"><table>
+{% for k, v in risk %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}
+</table></div>
+
+<h2 id="notes">9. Data notes</h2>
+<ul>
+{% for n in data_notes %}<li>{{ n }}</li>{% endfor %}
+</ul>
+
+<h2 id="disclaimer">10. Disclaimer</h2>
+<p>{{ disclaimer_long }}</p>
+<p class="muted">Generated by equity-research-engine on {{ generated }}.</p>
+</main>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smallcap Research Reports</title>
+<meta name="description" content="Public-data research reports for the Nifty Smallcap 100 (educational, not investment advice)">
+<style>{{ css | safe }}</style>
+</head>
+<body>
+<main>
+<h1>Nifty Smallcap 100: research reports</h1>
+<p class="sub">{{ n }} stocks · prices as of {{ as_of }} · generated {{ generated }}</p>
+<div class="disclaimer">{{ disclaimer }}</div>
+<p class="muted">Click a column heading to sort. Flags count triggered quality checks (pledges, cash conversion, leverage, liquidity and others), not a rating.</p>
+<div class="scroll"><table id="t">
+<thead><tr>{% for c in cols %}<th class="sortable {{ 'l' if c.type == 'str' }}" data-type="{{ c.type }}">{{ c.label }}</th>{% endfor %}</tr></thead>
+<tbody>
+{% for r in rows %}<tr>{% for v in r %}<td class="{{ 'l' if cols[loop.index0].type == 'str' }}" data-v="{{ v.sort }}">{{ v.html | safe }}</td>{% endfor %}</tr>
+{% endfor %}</tbody></table></div>
+<h2>Method</h2>
+<p>Prices: NSE bhavcopy, adjusted for splits, bonuses and demergers and cross-checked against the price series. Fundamentals: NSE results XBRL (2018 onwards) and SEBI Integrated Filing, kept point-in-time. Valuation: DCF, residual income (lenders), sum of the parts (holding companies) and multiples against each stock's own history and peers. Every report shows its assumptions and data gaps.</p>
+<p class="muted">Source code: <a href="{{ repo_url }}">{{ repo_url }}</a></p>
+</main>
+<script>
+document.querySelectorAll('#t th.sortable').forEach((th, i) => {
+  th.addEventListener('click', () => {
+    const tb = document.querySelector('#t tbody');
+    const num = th.dataset.type === 'num';
+    const dir = th.dataset.dir === 'asc' ? -1 : 1;
+    th.dataset.dir = dir === 1 ? 'asc' : 'desc';
+    [...tb.rows].sort((a, b) => {
+      let x = a.cells[i].dataset.v, y = b.cells[i].dataset.v;
+      if (num) { x = parseFloat(x); y = parseFloat(y);
+        if (isNaN(x)) return 1; if (isNaN(y)) return -1; return (x - y) * dir; }
+      return x.localeCompare(y) * dir;
+    }).forEach(r => tb.appendChild(r));
+  });
+});
+</script>
+</body>
+</html>

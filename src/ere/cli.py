@@ -432,6 +432,42 @@ def build_valuation_cmd(
 
 
 @app.command()
+def report(
+    symbol: str | None = typer.Argument(None, help="One symbol; omit with --all"),
+    all_: bool = typer.Option(False, "--all", help="Every stock plus index.html"),
+    out: str = typer.Option("reports", help="Output folder"),
+    pdf: bool = typer.Option(False, help="Also write PDFs (needs the [pdf] extra)"),
+    repo_url: str = typer.Option("https://github.com/varunmaddisetti/equity-research-engine",
+                                 help="Linked from the index page"),
+) -> None:
+    """Render self-contained HTML research reports."""
+    from pathlib import Path
+
+    from ere.report.build import build_reports
+
+    if not symbol and not all_:
+        raise typer.Exit("give a SYMBOL or --all")
+    out_dir = Path(out) if Path(out).is_absolute() else CONFIG_DIR.parent / out
+    with connect(read_only=True) as con, console.status("rendering reports"):
+        stats = build_reports(con, out_dir, load_valuation_config(),
+                              None if all_ else [symbol.upper()], repo_url)
+    console.print(stats)
+    if stats["errors"]:
+        console.print(f"[yellow]See {out_dir / '_errors.txt'} for the failures.[/]")
+    if pdf:
+        try:
+            from weasyprint import HTML
+        except ImportError:
+            raise typer.Exit("PDF export needs: uv pip install -e '.[pdf]' (and pango)") from None
+        for f in sorted(out_dir.glob("*.html")):
+            if f.name != "index.html":
+                HTML(filename=str(f)).write_pdf(str(f.with_suffix(".pdf")))
+        console.print("PDFs written next to the HTML files.")
+    target = out_dir / ("index.html" if all_ else f"{symbol.upper()}.html")
+    console.print(f"Open: {target}")
+
+
+@app.command()
 def show(symbol: str) -> None:
     """Print the analytics snapshot, flags and valuation ranges for one stock."""
     from ere.analytics.build import latest_metrics
