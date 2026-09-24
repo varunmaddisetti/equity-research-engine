@@ -102,10 +102,11 @@ def raw_path(raw_dir: Path, f: DailyFile, d: date) -> Path:
 def _read_csv_bytes(body: bytes) -> pd.DataFrame:
     if body[:2] == b"PK":
         with zipfile.ZipFile(io.BytesIO(body)) as z:
-            csvs = [n for n in z.namelist() if n.lower().endswith(".csv")]
+            names = [n for n in z.namelist() if not n.endswith("/")]
+            csvs = [n for n in names if n.lower().endswith(".csv")] or names
             if not csvs:
-                raise ValueError("zip contains no CSV")
-            body = z.read(csvs[0])
+                raise ValueError("zip is empty")
+            body = z.read(csvs[0])  # NSE sometimes zips a CSV without the .csv extension
     df = pd.read_csv(io.BytesIO(body), dtype=str, skipinitialspace=True)
     df.columns = [c.strip() for c in df.columns]
     df = df.loc[:, [c for c in df.columns if c and not c.startswith("Unnamed")]]

@@ -1,5 +1,7 @@
 # Equity Research Engine
 
+[![ci](https://github.com/varunmaddisetti/equity-research-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/varunmaddisetti/equity-research-engine/actions)
+
 Reproducible, public-data research reports for the **Nifty Smallcap 100**. Every number traces
 back to an exchange filing or price file, and every assumption lives in `config/`.
 
@@ -12,7 +14,7 @@ back to an exchange filing or price file, and every assumption lives in `config/
 | Milestone | State |
 |---|---|
 | M0 Skeleton, config, universe, schema, CLI, CI | ✅ done |
-| M1 Prices, index closes, delivery %, corporate actions, adjusted prices | ✅ code done, first full download pending |
+| M1 Prices, index closes, delivery %, corporate actions, adjusted prices | ✅ 10.7 years loaded (2,658 sessions); anomaly review in progress |
 | M2 Fundamentals (results XBRL) | next |
 | M2–M7 | see [docs/PLAN.md](docs/PLAN.md) |
 
@@ -41,11 +43,13 @@ Reruns only fetch new dates, so a weekly `ere ingest prices` takes seconds.
 `--offline` rebuilds the database from the raw files in `data/raw/` without the network.
 
 **How adjustment works.** ISINs change on face-value splits, so `security_master` chains old
-and new ISINs into one security. Split and bonus factors come from NSE corporate actions and
-are cross-checked against the exchange's own adjusted base price (`prev_close`) on the ex-date.
-Base-price adjustments with no matching corporate action (rights, demergers) are applied and
-flagged. Demergers you have investigated go in `config/price_adjustments.yaml`.
-`adj_close` is a split/bonus-adjusted *price* series; dividends are not reinvested.
+and new ISINs into one security. Factors come from, in order: manual entries in
+`config/price_adjustments.yaml`, splits/bonuses on NSE's corporate-action record, splits inferred
+where the ISIN changed but nothing is on record (snapped to a face-value ratio such as 1/5), and
+demergers on record (factor approximated from the price drop). Every applied event is verified
+against the price series, and unexplained moves over 25% are flagged. NSE's bhavcopy
+`PREVCLOSE` is the raw previous close, so it cannot be used for this. `adj_close` is a
+split/bonus/demerger-adjusted *price* series; dividends are not reinvested.
 
 ## Layout
 

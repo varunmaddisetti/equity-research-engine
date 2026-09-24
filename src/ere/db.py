@@ -70,7 +70,7 @@ DDL = [
         low           DOUBLE,
         close         DOUBLE NOT NULL,
         last          DOUBLE,
-        prev_close    DOUBLE,           -- exchange's base price; adjusted on ex-dates
+        prev_close    DOUBLE,           -- raw previous close (NOT adjusted on ex-dates)
         volume        BIGINT,
         traded_value  DOUBLE,           -- rupees
         trades        BIGINT,
@@ -172,7 +172,8 @@ DDL = [
         security_id  VARCHAR NOT NULL,
         ex_date      DATE NOT NULL,
         factor       DOUBLE NOT NULL,
-        source       VARCHAR NOT NULL,   -- corp_action | implied_prev_close | manual
+        source       VARCHAR NOT NULL,   -- manual | corp_action | inferred_isin_change
+                                         -- | demerger_approx
         note         VARCHAR,
         PRIMARY KEY (security_id, ex_date)
     )
@@ -196,7 +197,7 @@ DDL = [
     CREATE TABLE IF NOT EXISTS price_anomalies (
         security_id  VARCHAR NOT NULL,
         date         DATE NOT NULL,
-        kind         VARCHAR NOT NULL,   -- large_move | factor_mismatch | unmatched_base_adjustment
+        kind         VARCHAR NOT NULL,   -- see ere.clean.adjust_prices docstring
         severity     VARCHAR NOT NULL,   -- warn | error
         value        DOUBLE,
         note         VARCHAR

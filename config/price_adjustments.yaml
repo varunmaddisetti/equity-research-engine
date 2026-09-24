@@ -1,19 +1,31 @@
-# Manual price-adjustment factors. These override everything else on that date.
+# Human review of price history. Read by `ere build prices`.
 #
-# Use this when `ere check prices` shows a large_move or unmatched_base_adjustment that you
-# have investigated (typically a demerger, where the factor depends on how the market valued
-# the demerged business).
+# 1) adjustments: manual factors. They override everything else on that date.
+#    Use for demergers where you know the exact ratio, or anything `ere check prices` flags
+#    that you have investigated.
+#    factor = multiplier for prices BEFORE ex_date. For a demerger:
+#      factor = (parent value per share after demerger) / (parent close before ex-date)
+#    Give either isin or symbol (symbol as it traded on the ex-date).
 #
-# factor = multiplier for prices BEFORE ex_date. For a demerger:
-#   factor = (parent close on the day before ex-date - value of the demerged business per share)
-#            / parent close on the day before ex-date
-# Give either isin or symbol (symbol as it traded on the ex-date).
-#
-# Example:
-# adjustments:
-#   - symbol: EXAMPLE
-#     ex_date: 2024-05-17
-#     factor: 0.83
-#     note: "Demerger of XYZ business; factor from NSE special pre-open price discovery"
+# 2) reviewed_moves: large daily moves you have checked and accept as genuine market moves.
+#    They stop appearing in `ere check prices`. Always write the reason.
 
 adjustments: []
+#  - symbol: EXAMPLE
+#    ex_date: 2024-05-17
+#    factor: 0.83
+#    note: "Demerger of XYZ business; factor from NSE special pre-open price discovery"
+
+reviewed_moves:
+  - symbol: BANDHANBNK
+    date: 2020-03-23
+    note: "COVID crash day; Nifty fell ~13%"
+  - symbol: BANDHANBNK
+    date: 2020-03-26
+    note: "Rebound after the COVID crash"
+  - symbol: RPOWER
+    date: 2019-02-04
+    note: "Anil Ambani group sell-off after RCom's insolvency move"
+  - symbol: RPOWER
+    date: 2019-02-05
+    note: "Continuation of the group sell-off"

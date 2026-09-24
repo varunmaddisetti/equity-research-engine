@@ -6,6 +6,8 @@ from fixtures_nse import (
     A_NEW,
     A_OLD,
     CORP_ACTION_RECORDS,
+    F_NEW,
+    F_OLD,
     B,
     C,
     D,
@@ -16,7 +18,7 @@ from fixtures_nse import (
 )
 from typer.testing import CliRunner
 
-from ere.clean.adjust_prices import build_adjusted_prices
+from ere.clean.adjust_prices import build_adjusted_prices, snap_ratio
 from ere.clean.security_master import build_security_master
 from ere.db import connect, init_db
 from ere.ingest.corp_actions import records_to_frame
@@ -48,7 +50,8 @@ def test_security_master_chains_split_isin_and_keeps_rename(con):
     m = build_security_master(con).set_index("isin")
     assert m.loc[A_OLD, "security_id"] == A_NEW == m.loc[A_NEW, "security_id"]
     assert m.loc[E, "security_id"] == E and m.loc[E, "symbol"] == "EEE"
-    assert m["security_id"].nunique() == 5
+    assert m.loc[F_OLD, "security_id"] == F_NEW
+    assert m["security_id"].nunique() == 6
 
 
 def test_recycled_symbol_is_not_chained(tmp_path):
@@ -86,12 +89,34 @@ def test_bonus_adjusted_and_dividend_ignored(con, tmp_path):
     assert b.ret_1d.dropna().abs().max() == pytest.approx(0)
 
 
-def test_unexplained_base_adjustment_is_used_and_flagged(con, tmp_path):
-    build_adjusted_prices(con, tmp_path / "none.yaml", scope="all")
+def test_demerger_on_record_gets_approximate_factor(con, tmp_path):
+    stats = build_adjusted_prices(con, tmp_path / "none.yaml", scope="all")
     c = _adj(con, C)
     assert c.ret_1d.dropna().abs().max() == pytest.approx(0)
+    assert c[c.date < "2024-07-10"].adj_factor.eq(0.6).all()
     kinds = con.execute("SELECT kind FROM price_anomalies WHERE security_id = ?", [C]).fetchall()
-    assert kinds == [("unmatched_base_adjustment",)]
+    assert kinds == [("demerger_approx",)]
+    assert stats.events_demerger == 1
+
+
+def test_split_inferred_at_isin_change_without_record(con, tmp_path):
+    stats = build_adjusted_prices(con, tmp_path / "none.yaml", scope="all")
+    f = _adj(con, F_NEW)
+    assert f[f.date < "2024-07-08"].adj_factor.eq(0.1).all()
+    assert f.ret_1d.dropna().abs().max() == pytest.approx(0)
+    kinds = con.execute("SELECT kind FROM price_anomalies WHERE security_id = ?",
+                        [F_NEW]).fetchall()
+    assert kinds == [("inferred_split",)]
+    assert stats.events_inferred == 1
+
+
+@pytest.mark.parametrize("r, expected", [
+    (0.1997, 0.2), (0.21, 0.2), (0.5, 0.5), (0.41, 0.4), (0.667, None), (0.9091, None),
+    (0.62, None), (0.3, None), (10.3, 10.0), (2.4, 2.5),
+])
+def test_snap_ratio(r, expected):
+    got = snap_ratio(r)
+    assert got == pytest.approx(expected) if expected else got is None
 
 
 def test_real_crash_is_not_adjusted_but_flagged(con, tmp_path):
@@ -114,13 +139,32 @@ def test_manual_override_wins(con, tmp_path):
     assert ev == [(0.75, "manual")]
 
 
-def test_factor_mismatch_detected(con, tmp_path):
-    # Pretend the record said 1:2 bonus while the exchange applied 1:1.
+def test_wrong_factor_on_record_is_caught_by_prices(con, tmp_path):
+    # Pretend the record said 1:2 bonus (0.667) while the price actually halved (1:1).
     con.execute("UPDATE corp_actions SET factor = 2.0/3 WHERE action = 'bonus'")
+    build_adjusted_prices(con, tmp_path / "none.yaml", scope="all")
+    rows = con.execute("SELECT kind, severity FROM price_anomalies WHERE security_id = ?",
+                       [B]).fetchall()
+    assert ("event_not_in_prices", "error") in rows
+
+
+def test_wrong_date_on_record_is_caught(con, tmp_path):
+    # Record says the bonus went ex a week late: the real drop is unexplained and the
+    # applied event finds no drop.
+    con.execute("UPDATE corp_actions SET ex_date = DATE '2024-07-10' WHERE action = 'bonus'")
     build_adjusted_prices(con, tmp_path / "none.yaml", scope="all")
     kinds = {k for (k,) in con.execute(
         "SELECT kind FROM price_anomalies WHERE security_id = ?", [B]).fetchall()}
-    assert "factor_mismatch" in kinds
+    assert {"event_not_in_prices", "large_move"} <= kinds
+
+
+def test_reviewed_move_is_silenced(con, tmp_path):
+    p = tmp_path / "manual.yaml"
+    p.write_text("adjustments: []\nreviewed_moves:\n  - symbol: DDD\n    date: 2024-07-11\n"
+                 "    note: genuine crash\n")
+    build_adjusted_prices(con, p, scope="all")
+    assert con.execute("SELECT count(*) FROM price_anomalies WHERE security_id = ?",
+                       [D]).fetchone()[0] == 0
 
 
 def test_universe_scope_only_builds_index_members(con, tmp_path):

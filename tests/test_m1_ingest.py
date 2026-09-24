@@ -55,13 +55,13 @@ def test_legacy_and_udiff_parse_to_identical_schema():
         udf[cols].sort_values("isin").reset_index(drop=True),
     )
     # bond series, non-equity ISIN and the ETF are filtered out
-    assert len(leg) == len(rows) == 5
+    assert len(leg) == len(rows) == 6
 
 
 def test_delivery_parser_handles_spaced_headers_and_dashes():
     rows = _closes()[date(2024, 7, 1)]
     df = parse_delivery(delivery_csv(date(2024, 7, 1), rows), date(2024, 7, 1))
-    assert len(df) == 5 and df.delivery_pct.eq(40.0).all()
+    assert len(df) == 6 and df.delivery_pct.eq(40.0).all()
 
 
 def test_index_names_normalised():
@@ -88,9 +88,9 @@ def test_runner_downloads_caches_and_resumes(tmp_path):
         stats = _run(con, tmp_path, client)
         assert stats[("bhavcopy", "ok")] == len(SESSIONS)
         assert stats[("bhavcopy", "missing")] == 1  # the holiday
-        assert con.execute("SELECT count(*) FROM prices_daily").fetchone()[0] == 5 * 9
+        assert con.execute("SELECT count(*) FROM prices_daily").fetchone()[0] == 6 * 9
         assert con.execute("SELECT count(*) FROM index_prices_daily").fetchone()[0] == 2 * 9
-        assert con.execute("SELECT count(*) FROM delivery_daily").fetchone()[0] == 5 * 9
+        assert con.execute("SELECT count(*) FROM delivery_daily").fetchone()[0] == 6 * 9
         status = dict(con.execute(
             "SELECT key, status FROM ingest_log WHERE dataset='bhavcopy'").fetchall())
         assert status[HOLIDAY.isoformat()] == "missing"
@@ -100,7 +100,7 @@ def test_runner_downloads_caches_and_resumes(tmp_path):
         stats2 = _run(con, tmp_path, client)
         assert client.requests == []
         assert stats2[("bhavcopy", "skipped")] == 10
-        assert con.execute("SELECT count(*) FROM prices_daily").fetchone()[0] == 45
+        assert con.execute("SELECT count(*) FROM prices_daily").fetchone()[0] == 54
 
 
 def test_recent_missing_dates_are_retried(tmp_path):
@@ -121,7 +121,7 @@ def test_offline_rebuild_from_cache(tmp_path):
     with connect(tmp_path / "b.duckdb") as con:
         init_db(con)
         _run(con, tmp_path, None, offline=True)
-        assert con.execute("SELECT count(*) FROM prices_daily").fetchone()[0] == 45
+        assert con.execute("SELECT count(*) FROM prices_daily").fetchone()[0] == 54
 
 
 def test_network_error_is_logged_not_fatal(tmp_path):
@@ -175,7 +175,7 @@ def test_percentage_dividend_uses_face_value():
 
 def test_records_to_frame_drops_non_actions():
     df = records_to_frame(CORP_ACTION_RECORDS)
-    assert sorted(df.action) == ["bonus", "dividend", "split"]
+    assert sorted(df.action) == ["bonus", "demerger", "dividend", "split"]
     assert df.set_index("action").loc["split", "isin"] == A_NEW
 
 
@@ -192,8 +192,21 @@ def test_ingest_corp_actions_caches_closed_windows(tmp_path):
         init_db(con)
         ingest_corp_actions(con, tmp_path / "raw", date(2024, 7, 1), date(2024, 9, 30),
                             client=client, today=date(2025, 1, 1))
-        assert con.execute("SELECT count(*) FROM corp_actions").fetchone()[0] == 3
+        assert con.execute("SELECT count(*) FROM corp_actions").fetchone()[0] == 4
         client.requests.clear()
         ingest_corp_actions(con, tmp_path / "raw", date(2024, 7, 1), date(2024, 9, 30),
                             client=client, today=date(2025, 1, 1))
         assert client.requests == []  # closed quarter, already done
+
+
+def test_zip_without_csv_extension_is_read():
+    """NSE served sec_bhavdata_full_08082022.csv as a zip whose member had no .csv suffix."""
+    import io
+    import zipfile
+
+    rows = _closes()[date(2024, 7, 1)]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("sec_bhavdata_full_08082022", delivery_csv(date(2022, 8, 8), rows))
+    df = parse_delivery(buf.getvalue(), date(2022, 8, 8))
+    assert len(df) == 6

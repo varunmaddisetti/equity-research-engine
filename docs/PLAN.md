@@ -55,3 +55,9 @@ Golden-test stocks for M2 (chosen to cover every path): **KAYNES** (DCF, capex-h
 - **M1:** ISINs are not stable in India. A face-value split issues a new ISIN, so M0's
   "ISINs usually don't change" was wrong. Fixed with `security_master`, which chains ISINs by
   symbol continuity within 5 sessions.
+- **M1 first run (Sept 2026):** 2,658 sessions loaded with 0 parse errors across both
+  bhavcopy formats; delivery data exists only from 2019-08-23. The first anomaly report
+  disproved an assumption: bhavcopy `PREVCLOSE` is *not* adjusted on ex-dates (implied factor
+  1.0 on all 42 split/bonus ex-dates). Verification now uses the price series itself, splits
+  missing from the corporate-action record are inferred at ISIN changes, and demergers on record
+  get an approximate factor.

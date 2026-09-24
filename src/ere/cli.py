@@ -347,6 +347,9 @@ def check_prices(
     if symbol:
         console.print(detail[detail.symbol == symbol].to_string(index=False) or "no anomalies")
         return
+    if len(detail):
+        kinds = detail.groupby(["kind", "severity"]).size().rename("n").reset_index()
+        console.print(kinds.to_string(index=False) + "\n")
     no_data = coverage[coverage.days == 0]
     console.print(coverage.head(25).to_string(index=False))
     console.print(

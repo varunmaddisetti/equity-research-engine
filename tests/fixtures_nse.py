@@ -3,12 +3,16 @@
 The market spans 2024-07-01 .. 2024-07-12, so it crosses the legacy -> UDiFF cutover
 (8 Jul 2024). 2024-07-05 is treated as a holiday (no files).
 
+As in real bhavcopies (verified on 42 ex-dates, Sept 2026), PREVCLOSE is the raw previous
+close: it is NOT adjusted on ex-dates.
+
 Stocks:
-  AAA  1:5 face-value split (Rs10 -> Rs2) on 2024-07-09 WITH a new ISIN
-  BBB  1:1 bonus on 2024-07-03
-  CCC  base price cut 20% on 2024-07-10 with no corporate action (e.g. demerger)
-  DDD  genuine 30% crash on 2024-07-11 (no base adjustment)
+  AAA  1:5 split (Rs10 -> Rs2) on 2024-07-09 with a new ISIN; corporate action on record
+  BBB  1:1 bonus on 2024-07-03; corporate action on record
+  CCC  demerger on 2024-07-10: price 100 -> 60; "Demerger" corporate action on record
+  DDD  genuine 30% crash on 2024-07-11; nothing on record
   EEE  renamed from EEEOLD to EEE on 2024-07-08, same ISIN
+  FFF  1:10 split on 2024-07-08 with a new ISIN but NO corporate action on record
 """
 
 from __future__ import annotations
@@ -24,39 +28,31 @@ HOLIDAY = date(2024, 7, 5)
 
 A_OLD, A_NEW = "INE000A01011", "INE000A01029"
 B, C, D, E = "INE000B01011", "INE000C01011", "INE000D01011", "INE000E01011"
+F_OLD, F_NEW = "INE000F01011", "INE000F01029"
 
 
 def _closes() -> dict[date, list[tuple[str, str, float, float]]]:
-    """date -> list of (symbol, isin, close, prev_close)."""
+    """date -> list of (symbol, isin, close, prev_close). prev_close is always raw."""
     out: dict[date, list] = {}
     prev: dict[str, float] = {}
+
+    def row(key: str, sym: str, isin: str, close: float) -> tuple:
+        r = (sym, isin, round(close, 2), prev.get(key, round(close, 2)))
+        prev[key] = round(close, 2)
+        return r
+
     for i, d in enumerate(SESSIONS):
-        rows = []
-        # AAA: ~1000 before split, ~200 after (1% daily drift)
-        a = 1000 * 1.01**i
-        if d < date(2024, 7, 9):
-            rows.append(("AAA", A_OLD, round(a, 2), prev.get("AAA", a)))
-        else:
-            pc = prev["AAA"] * 0.2 if d == date(2024, 7, 9) else prev["AAA"]
-            rows.append(("AAA", A_NEW, round(a * 0.2, 2), pc))
-        prev["AAA"] = rows[-1][2]
-        # BBB: 500 -> 250 on bonus
-        b = 500.0 if d < date(2024, 7, 3) else 250.0
-        pcb = prev.get("BBB", b) * (0.5 if d == date(2024, 7, 3) else 1.0)
-        rows.append(("BBB", B, b, pcb))
-        prev["BBB"] = b
-        # CCC: 100 -> 80 with exchange base adjustment
-        c = 100.0 if d < date(2024, 7, 10) else 80.0
-        pcc = prev.get("CCC", c) * (0.8 if d == date(2024, 7, 10) else 1.0)
-        rows.append(("CCC", C, c, pcc))
-        prev["CCC"] = c
-        # DDD: real crash, prev_close NOT adjusted
-        dd = 200.0 if d < date(2024, 7, 11) else 140.0
-        rows.append(("DDD", D, dd, prev.get("DDD", dd)))
-        prev["DDD"] = dd
-        # EEE: rename
-        sym = "EEEOLD" if d < date(2024, 7, 8) else "EEE"
-        rows.append((sym, E, 50.0, 50.0))
+        a = 1000 * 1.01**i  # 1% daily drift
+        rows = [
+            row("A", "AAA", A_OLD if d < date(2024, 7, 9) else A_NEW,
+                a if d < date(2024, 7, 9) else a * 0.2),
+            row("B", "BBB", B, 500.0 if d < date(2024, 7, 3) else 250.0),
+            row("C", "CCC", C, 100.0 if d < date(2024, 7, 10) else 60.0),
+            row("D", "DDD", D, 200.0 if d < date(2024, 7, 11) else 140.0),
+            row("E", "EEEOLD" if d < date(2024, 7, 8) else "EEE", E, 50.0),
+            row("F", "FFF", F_OLD if d < date(2024, 7, 8) else F_NEW,
+                900.0 if d < date(2024, 7, 8) else 90.0),
+        ]
         out[d] = rows
     return out
 
@@ -170,6 +166,8 @@ CORP_ACTION_RECORDS = [
     {"symbol": "BBB", "series": "EQ", "isin": B, "faceVal": "10",
      "subject": "Interim Dividend - Rs 2.50 Per Share", "exDate": "11-Jul-2024",
      "comp": "BBB Ltd"},
+    {"symbol": "CCC", "series": "EQ", "isin": C, "faceVal": "10",
+     "subject": "Demerger", "exDate": "10-Jul-2024", "comp": "CCC Ltd"},
     {"symbol": "DDD", "series": "EQ", "isin": D, "faceVal": "10",
      "subject": "Annual General Meeting", "exDate": "02-Jul-2024", "comp": "DDD Ltd"},
 ]
