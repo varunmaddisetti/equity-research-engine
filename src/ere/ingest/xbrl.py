@@ -14,6 +14,7 @@ Parsing rules (from live NSE files, Sept 2026):
 
 from __future__ import annotations
 
+import time
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from datetime import date
@@ -89,6 +90,12 @@ def raw_xbrl_path(raw_dir: Path, filing_id: str, period_end) -> Path:
     return raw_dir / "nse" / "xbrl" / f"{pd.Timestamp(period_end):%Y}" / filing_id
 
 
+XBRL_MIN_INTERVAL_S = 1.0     # NSE's CDN starts stalling after a few hundred faster requests
+FAILS_BEFORE_COOLDOWN = 5     # consecutive failed downloads that trigger a pause
+COOLDOWN_S = 600.0            # pause length; one pause, then stop if it keeps failing
+FAILS_AFTER_COOLDOWN = 3
+
+
 def ingest_xbrl(
     con: duckdb.DuckDBPyConnection,
     raw_dir: Path,
@@ -97,8 +104,16 @@ def ingest_xbrl(
     symbols: list[str] | None = None,
     retry_errors: bool = False,
     on_progress: Callable[[str, str], None] | None = None,
+    cooldown_s: float = COOLDOWN_S,
 ) -> dict[str, int]:
-    """Download and parse every pending filing. Resumable; raw files cached."""
+    """Download and parse every pending filing. Resumable; raw files cached.
+
+    on_progress(symbol, message) is called before each download and after each parse, so the
+    screen always shows what the run is waiting on. After FAILS_BEFORE_COOLDOWN consecutive
+    download failures the run pauses for `cooldown_s`; if FAILS_AFTER_COOLDOWN more fail in a
+    row after the pause, it stops (stats["stopped"] = 1) instead of hammering NSE. Rerunning
+    the command later carries on from where it stopped.
+    """
     statuses = ["pending"] + (["error", "missing"] if retry_errors else [])
     q = ("SELECT filing_id, symbol, period_end, xbrl_url FROM filings WHERE status IN ("
          + ",".join("?" * len(statuses)) + ")")
@@ -107,19 +122,41 @@ def ingest_xbrl(
         q += " AND symbol IN (" + ",".join("?" * len(symbols)) + ")"
         params += symbols
     todo = con.execute(q + " ORDER BY symbol, period_end", params).fetchall()
-    stats = {"parsed": 0, "missing": 0, "errors": 0, "not_cached": 0, "facts": 0}
-    for filing_id, symbol, period_end, url in todo:
+    stats = {"parsed": 0, "missing": 0, "errors": 0, "not_cached": 0, "facts": 0,
+             "cooldowns": 0, "stopped": 0}
+    if client is not None and hasattr(client, "set_min_interval"):
+        client.set_min_interval(XBRL_MIN_INTERVAL_S)
+    fails, cooled = 0, False
+
+    def say(sym, msg):
+        if on_progress:
+            on_progress(sym, msg)
+
+    for i, (filing_id, symbol, period_end, url) in enumerate(todo, 1):
         p = raw_xbrl_path(raw_dir, filing_id, period_end)
         body = p.read_bytes() if p.exists() else None
         if body is None and offline:
             stats["not_cached"] += 1
             continue
         if body is None:
+            say(symbol, f"[{i}/{len(todo)}] downloading {filing_id}")
             try:
                 body = client.get_bytes(url)
+                fails = 0
             except Exception as e:
-                _set_status(con, filing_id, "error", f"download: {e}"[:500])
+                _set_status(con, filing_id, "error",
+                            f"download: {type(e).__name__}: {e}"[:500])
                 stats["errors"] += 1
+                fails += 1
+                if not cooled and fails >= FAILS_BEFORE_COOLDOWN:
+                    say(symbol, f"{fails} downloads failed in a row - NSE may be throttling; "
+                                f"pausing {cooldown_s / 60:.0f} min")
+                    time.sleep(cooldown_s)
+                    stats["cooldowns"] += 1
+                    cooled, fails = True, 0
+                elif cooled and fails >= FAILS_AFTER_COOLDOWN:
+                    stats["stopped"] = 1
+                    break
                 continue
             if body is None:
                 _set_status(con, filing_id, "missing", "404")
@@ -138,8 +175,7 @@ def ingest_xbrl(
         _set_status(con, filing_id, "parsed", f"{n} facts")
         stats["parsed"] += 1
         stats["facts"] += n
-        if on_progress:
-            on_progress(symbol, filing_id)
+        say(symbol, f"[{i}/{len(todo)}] parsed {filing_id}")
     return stats
 
 

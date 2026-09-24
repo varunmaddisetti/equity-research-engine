@@ -321,7 +321,7 @@ def ingest_xbrl_cmd(
     symbols: str | None = typer.Option(None, help="Comma-separated, default: all pending"),
     offline: bool = typer.Option(False, help="Parse cached files only"),
     retry_errors: bool = typer.Option(False, help="Also retry filings that failed before"),
-    interval: float = typer.Option(0.5, help="Seconds between downloads"),
+    interval: float = typer.Option(1.0, help="Seconds between downloads (minimum 1.0)"),
 ) -> None:
     """Download and parse pending XBRL filings -> xbrl_facts. Resumable."""
     from ere.http import ExchangeClient
@@ -337,11 +337,21 @@ def ingest_xbrl_cmd(
                 stats = ingest_xbrl(
                     con, RAW_DIR, client=client, offline=offline, symbols=sym_list,
                     retry_errors=retry_errors,
-                    on_progress=lambda s, f: st.update(f"parsed {s} {f}"))
+                    on_progress=lambda s, msg: st.update(f"{s}: {msg}"))
+            errors = con.execute(
+                "SELECT split_part(message, ':', 1) || ': ' || split_part(message, ':', 2) AS "
+                "reason, count(*) AS n FROM filings WHERE status = 'error' GROUP BY 1 "
+                "ORDER BY n DESC LIMIT 5").df()
     finally:
         if client:
             client.close()
     console.print(stats)
+    if len(errors):
+        console.print("[bold]Failed filings by reason[/] (retry later with --retry-errors)")
+        console.print(errors.to_string(index=False))
+    if stats.get("stopped"):
+        console.print("[yellow]Stopped early: NSE kept failing even after a pause. Wait an hour "
+                      "and run the same command again - it continues where it stopped.[/]")
 
 
 @ingest_app.command("financials")
