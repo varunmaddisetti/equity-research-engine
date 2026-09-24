@@ -445,7 +445,8 @@ def render_report(ctx: dict) -> str:
                                                      **ctx)
 
 
-def render_index(con, out_rows: list[dict], as_of, repo_url: str) -> str:
+def render_index(con, out_rows: list[dict], as_of, repo_url: str,
+                 has_research: bool = False) -> str:
     cols = [("Symbol", "str"), ("Company", "str"), ("Industry", "str"), ("Path", "str"),
             ("Price", "num"), ("Mkt cap (Rs cr)", "num"), ("P/E", "num"), ("P/B", "num"),
             ("EV/EBITDA", "num"), ("ROE", "num"), ("1y return", "num"), ("Flags", "num")]
@@ -453,6 +454,7 @@ def render_index(con, out_rows: list[dict], as_of, repo_url: str) -> str:
     return env.get_template("index.html.j2").render(
         css=(TEMPLATES / "base.css").read_text(), cols=[{"label": c, "type": t} for c, t in cols],
         rows=out_rows, n=len(out_rows), as_of=as_of, repo_url=repo_url,
+        has_research=has_research,
         generated=datetime.now().strftime("%Y-%m-%d %H:%M"), disclaimer=DISCLAIMER)
 
 
@@ -501,8 +503,9 @@ def build_reports(con: duckdb.DuckDBPyConnection, out_dir: Path, val_cfg: Valuat
             m = lm[lm["isin"] == r.isin].iloc[0].to_dict() if len(lm) and r.isin in set(
                 lm["isin"]) else {}
             rows.append(index_row(r._asdict(), m, flag_counts.get(r.isin, 0)))
-        (out_dir / "index.html").write_text(render_index(con, rows, as_of, repo_url),
-                                            encoding="utf-8")
+        (out_dir / "index.html").write_text(
+            render_index(con, rows, as_of, repo_url, (out_dir / "research.html").exists()),
+            encoding="utf-8")
     if errors:
         (out_dir / "_errors.txt").write_text("\n".join(errors), encoding="utf-8")
     return stats

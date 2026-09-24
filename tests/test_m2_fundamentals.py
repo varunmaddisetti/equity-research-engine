@@ -129,6 +129,12 @@ def test_as_of_hides_future_filings(con):
     assert w.period_end.max() == pd.Timestamp("2024-09-30")
 
 
+def test_shares_fall_back_to_pat_over_eps():
+    from ere.clean.financials import add_derived
+    df = add_derived(pd.DataFrame({"pat": [375 * CR], "eps_basic": [4.6875]}))
+    assert df.shares.iloc[0] == pytest.approx(80 * CR)
+
+
 def test_bank_fields(con):
     w = fundamentals(con, ("FY", "BS"), isins=[K_ISIN]).set_index("period_type")
     assert w.loc["FY", "nii"] == 800 * CR

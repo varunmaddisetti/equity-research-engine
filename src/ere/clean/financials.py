@@ -150,6 +150,12 @@ def add_derived(df: pd.DataFrame) -> pd.DataFrame:
     df["ebitda"] = (_col(df, "pbt") - z("exceptional_items") + _col(df, "finance_cost")
                     + _col(df, "depreciation") - z("other_income"))
     df["shares"] = _col(df, "paid_up_capital") / _col(df, "face_value")
+    # Bank results XBRL has no face-value tag: fall back to PAT / EPS (same period, so a
+    # quarterly PAT pairs with quarterly EPS). Only sensible when both are positive.
+    pat = _col(df, "pat_owners").fillna(_col(df, "pat"))
+    eps = _col(df, "eps_basic")
+    from_eps = (pat / eps).where((pat > 0) & (eps > 0))
+    df["shares"] = df["shares"].fillna(from_eps)
     df["debt"] = _col(df, "borrowings_noncurrent").fillna(0) + _col(df, "borrowings_current")
     df.loc[_col(df, "borrowings_noncurrent").isna() & _col(df, "borrowings_current").isna(),
            "debt"] = np.nan

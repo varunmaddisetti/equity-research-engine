@@ -22,12 +22,14 @@ config_app = typer.Typer(help="Validate configuration", no_args_is_help=True)
 ingest_app = typer.Typer(help="Download public data", no_args_is_help=True)
 build_app = typer.Typer(help="Build derived tables from raw data", no_args_is_help=True)
 check_app = typer.Typer(help="Data-quality checks", no_args_is_help=True)
+research_app = typer.Typer(help="Research on top of the engine", no_args_is_help=True)
 app.add_typer(universe_app, name="universe")
 app.add_typer(db_app, name="db")
 app.add_typer(config_app, name="config")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(build_app, name="build")
 app.add_typer(check_app, name="check")
+app.add_typer(research_app, name="research")
 
 console = Console()
 
@@ -493,6 +495,7 @@ def publish(
 def refresh(
     download: bool = typer.Option(True, help="--no-download rebuilds from local data only"),
     publish_site: bool = typer.Option(False, "--publish", help="Push reports to gh-pages"),
+    research: bool = typer.Option(False, "--research", help="Also rerun the M7 backtest"),
 ) -> None:
     """The weekly job: new data -> adjusted prices -> fundamentals -> analytics -> valuation
     -> reports (-> publish). Safe to rerun; every download step is incremental."""
@@ -524,6 +527,9 @@ def refresh(
         ("reports", lambda: report(symbol=None, all_=True, out="reports", pdf=False,
                                    repo_url=REPO_URL), True),
     ]
+    if research:
+        steps.insert(len(steps) - 1, ("research backtest",
+                                      lambda: research_backtest(years=8, out="reports"), False))
     if publish_site:
         steps.append(("publish", lambda: publish_to_gh_pages(
             CONFIG_DIR.parent, CONFIG_DIR.parent / "reports"), True))
@@ -536,6 +542,35 @@ def refresh(
     console.print(f"log: {log}")
     if not rep.ok:
         raise typer.Exit(code=1)
+
+
+@research_app.command("backtest")
+def research_backtest(
+    years: int = typer.Option(8, help="Years of monthly history to test"),
+    out: str = typer.Option("reports", help="Folder for research.html"),
+) -> None:
+    """Point-in-time test: do cheap-looking stocks outperform? -> research.html + CSVs."""
+    from pathlib import Path
+
+    from ere.research.backtest import LIMITATIONS, build_panel, summarise
+    from ere.research.report import render_research
+
+    with connect(read_only=True) as con, console.status("building the panel (a few minutes)"):
+        panel = build_panel(con, years=years)
+    if panel.empty:
+        raise typer.Exit("no data for a backtest - run the pipeline first")
+    stats, series = summarise(panel)
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    panel.to_csv(PROCESSED_DIR / "backtest_panel.csv", index=False)
+    table = pd.DataFrame([s.__dict__ for s in stats])
+    table.to_csv(PROCESSED_DIR / "backtest_summary.csv", index=False)
+    out_dir = Path(out) if Path(out).is_absolute() else CONFIG_DIR.parent / out
+    page = render_research(stats, series, panel, out_dir / "research.html")
+    console.print(table.round(4).to_string(index=False) if len(table) else
+                  "Not enough stocks per month for statistics (need 20).")
+    for lim in LIMITATIONS:
+        console.print(f"[yellow]caveat:[/] {lim}")
+    console.print(f"Page: {page}")
 
 
 @app.command()

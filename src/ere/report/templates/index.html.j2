@@ -18,6 +18,9 @@
 <tbody>
 {% for r in rows %}<tr>{% for v in r %}<td class="{{ 'l' if cols[loop.index0].type == 'str' }}" data-v="{{ v.sort }}">{{ v.html | safe }}</td>{% endfor %}</tr>
 {% endfor %}</tbody></table></div>
+{% if has_research %}<h2>Research</h2>
+<p><a href="research.html">Do cheap-looking smallcaps outperform? A point-in-time backtest of the valuation signals</a></p>
+{% endif %}
 <h2>Method</h2>
 <p>Prices: NSE bhavcopy, adjusted for splits, bonuses and demergers and cross-checked against the price series. Fundamentals: NSE results XBRL (2018 onwards) and SEBI Integrated Filing, kept point-in-time. Valuation: DCF, residual income (lenders), sum of the parts (holding companies) and multiples against each stock's own history and peers. Every report shows its assumptions and data gaps.</p>
 <p class="muted">Source code: <a href="{{ repo_url }}">{{ repo_url }}</a></p>

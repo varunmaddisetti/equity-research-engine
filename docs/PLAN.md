@@ -35,7 +35,7 @@
 | **M4** | 8–9 | DCF (scenarios, 5×5 sensitivity, reverse DCF), residual income, multiples, SOTP, EV/Sales | Toy cases match a hand calculation exactly. Code ✅ (toy DCF checked line by line); SOTP inputs to fill |
 | **M5** | 10 | Report template + charts (+ optional PDF) | `ere report KAYNES` gives a clean report. Code ✅, checked visually on synthetic data (light, dark, phone) |
 | **M6** | 11 | Weekly refresh (launchd on the Mac; NSE blocks cloud IPs), `ere publish` to gh-pages, README | Unattended refresh succeeds. Code ✅, to be installed |
-| **M7** | 12+ | Point-in-time backtest: do stocks below their valuation range outperform over 12 months? | Quintile spreads + IC, no look-ahead, survivorship-free |
+| **M7** | 12+ | Point-in-time backtest: do cheap-looking stocks (earnings / book / EBITDA yield, discount to own multiple history) outperform over 1, 3, 12 months? | Quintile spreads + rank IC, no look-ahead. Code ✅; survivorship-free needs historical index constituents (not yet available) |
 
 Golden-test stocks for M2 (chosen to cover every path): **KAYNES** (DCF, capex-heavy growth),
 **NATCOPHARM** (DCF, pharma), **KARURVYSYA** (bank), **MANAPPURAM** (NBFC), **CDSL** (asset-light financial).
@@ -88,3 +88,4 @@ Golden-test stocks for M2 (chosen to cover every path): **KAYNES** (DCF, capex-h
 | NBFC XBRL element names | Unverified until the first run | Fix from `xbrl_unmapped_elements.csv` |
 | SOTP stakes (CHOLAHLDNG) | Report says "needs inputs" | Fill `config/sotp.yaml` from the annual report |
 | Bank NIM | Approximated with advances + investments | Needs interest-earning assets from annual reports |
+| Historical index constituents | M7 backtest has survivorship bias | Archive NSE rebalance files (March / September) going forward; source past lists |

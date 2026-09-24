@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Valuation Signal Backtest</title>
+<meta name="description" content="Point-in-time test of whether cheap-looking Nifty Smallcap 100 stocks outperformed">
+<style>{{ css | safe }}</style>
+</head>
+<body>
+<main>
+<p class="muted"><a href="index.html">← All stocks</a></p>
+<h1>Do cheap-looking smallcaps outperform?</h1>
+<p class="sub">Point-in-time backtest, monthly, {{ start }} to {{ end }} · {{ n_stocks }} stocks · returns in excess of the Nifty Smallcap 100</p>
+<div class="disclaimer">Research into a hypothesis, not a trading recommendation or investment advice.</div>
+
+<h2>Limitations first</h2>
+<ul>{% for l in limitations %}<li>{{ l }}</li>{% endfor %}</ul>
+
+<h2>Summary</h2>
+<p>Rank IC is the Spearman correlation, each month, between a stock's signal (higher = cheaper) and its subsequent excess return. Q5 − Q1 is the average monthly return of the cheapest fifth minus the most expensive fifth.</p>
+<div class="scroll"><table>
+<tr><th>Signal</th><th>Horizon</th><th>Months</th><th>Mean IC</th><th>IC t-stat</th><th>IC &gt; 0</th><th>Q5 − Q1 / month</th><th>Q5 − Q1 annualised</th></tr>
+{% for r in rows %}<tr><td>{{ r.signal }}</td><td>{{ r.horizon }}</td><td>{{ r.months }}</td><td>{{ r.mean_ic }}</td><td>{{ r.ic_t }}</td><td>{{ r.hit }}</td><td>{{ r.q51 }}</td><td>{{ r.q51a }}</td></tr>{% endfor %}
+</table></div>
+<p class="muted">12-month IC observations overlap month to month, so their t-statistics overstate significance.</p>
+
+{% for c in charts %}<div class="card" aria-label="{{ c.title }}">{{ c.svg | safe }}</div>{% endfor %}
+
+<h2>Signals</h2>
+<ul>
+<li><strong>earnings_yield</strong>: TTM PAT to owners / market cap (1 / P/E).</li>
+<li><strong>book_to_price</strong>: book value / market cap (1 / P/B).</li>
+<li><strong>ebitda_yield</strong>: TTM EBITDA / enterprise value (1 / EV/EBITDA).</li>
+<li><strong>band_discount</strong>: log of the stock's own trailing 36-month median multiple over today's (EV/EBITDA for operating companies, P/B for lenders, EV/Sales for pre-profit).</li>
+</ul>
+<p class="muted">Every signal uses only prices and results filed by the rebalance date. Generated {{ generated }}.</p>
+</main>
+</body>
+</html>

@@ -36,7 +36,7 @@ NSE shareholding + pledges ─► shareholding ───────────
 | M4 Valuation: DCF, residual income, SOTP, multiples | ✅ code; first real run pending |
 | M5 HTML reports | ✅ code; first real run pending |
 | M6 Weekly refresh + GitHub Pages | ✅ code; to be installed |
-| M7 Point-in-time backtest of valuation signals | next — see [docs/PLAN.md](docs/PLAN.md) |
+| M7 Point-in-time backtest of valuation signals | ✅ code; first real run pending (`ere research backtest`) |
 
 ## Quick start
 
@@ -61,6 +61,7 @@ weekly run takes minutes.
 | Analytics | `ere build analytics`, `ere show SYMBOL` | as of the last trading day (or `--as-of`) |
 | Valuation | `ere build valuation` | ~3 min: builds 5-year point-in-time multiple history |
 | Reports | `ere report SYMBOL`, `ere report --all` | self-contained HTML, light/dark, phone-friendly |
+| Research | `ere research backtest` | do cheap-looking stocks outperform? rank IC, quintile spreads, caveats → `research.html` |
 | Publish | `ere publish` | pushes `reports/` to the `gh-pages` branch |
 | Weekly job | `./scripts/install_weekly_job.sh` | macOS launchd, Saturdays 09:00 |
 
@@ -109,6 +110,7 @@ src/ere/
   analytics/   risk, ratios, quality flags, snapshot build
   valuation/   DCF, residual income, multiples, SOTP, build + football field
   report/      charts (SVG), templates, report build
+  research/    M7 point-in-time backtest and its page
   publish.py   refresh pipeline, gh-pages publishing
   cli.py       the `ere` command
 scripts/       weekly refresh + launchd installer
