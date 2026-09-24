@@ -1,0 +1,19 @@
+# Manual price-adjustment factors. These override everything else on that date.
+#
+# Use this when `ere check prices` shows a large_move or unmatched_base_adjustment that you
+# have investigated (typically a demerger, where the factor depends on how the market valued
+# the demerged business).
+#
+# factor = multiplier for prices BEFORE ex_date. For a demerger:
+#   factor = (parent close on the day before ex-date - value of the demerged business per share)
+#            / parent close on the day before ex-date
+# Give either isin or symbol (symbol as it traded on the ex-date).
+#
+# Example:
+# adjustments:
+#   - symbol: EXAMPLE
+#     ex_date: 2024-05-17
+#     factor: 0.83
+#     note: "Demerger of XYZ business; factor from NSE special pre-open price discovery"
+
+adjustments: []

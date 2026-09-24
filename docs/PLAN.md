@@ -29,7 +29,7 @@
 | # | Weeks | Deliverable | Done when |
 |---|---|---|---|
 | **M0** | 1 | Skeleton, config, universe, DuckDB schema, CLI, CI | `pytest` green; `ere config check` and `ere db sync-universe` work ✅ |
-| **M1** | 2–3 | Prices: NSE bhavcopy (legacy + UDiFF from Jul 2024), index closes, corporate actions, adjusted prices | 10 years for 100 stocks loaded; no unexplained daily move >40% on any ex-date |
+| **M1** | 2–3 | Prices: NSE bhavcopy (legacy + UDiFF from Jul 2024), index closes, delivery %, corporate actions, ISIN chaining, adjusted prices | 10 years loaded; every `error` anomaly in `ere check prices` for index stocks explained or fixed. Code ✅, first full run pending |
 | **M2** | 4–6 | Fundamentals: results XBRL (consolidated + standalone), tag mapping, restatements kept | Golden tests pass for 5 stocks (±0.5%); ≥90% field fill for the rest; unmapped tags logged |
 | **M3** | 7 | Shareholding, ratios, quality flags, beta, liquidity, peers | Ratios hand-checked for 5 stocks |
 | **M4** | 8–9 | DCF (scenarios, 5×5 sensitivity, reverse DCF), residual income, multiples, SOTP, EV/Sales | Toy cases match an Excel model exactly |
@@ -49,3 +49,9 @@ Golden-test stocks for M2 (chosen to cover every path): **KAYNES** (DCF, capex-h
 | Restatements | `financials` keeps every filing_date; analysis uses the latest filing available *as of* a date |
 | Index rebalance breaks config | `load_universe` fails loudly on stale overrides; `ere universe refresh` shows the diff |
 | Scope creep | No new features before M6 |
+
+## Lessons logged
+
+- **M1:** ISINs are not stable in India. A face-value split issues a new ISIN, so M0's
+  "ISINs usually don't change" was wrong. Fixed with `security_master`, which chains ISINs by
+  symbol continuity within 5 sessions.
