@@ -1,0 +1,22 @@
+# Sum-of-the-parts inputs for stocks on the `sotp` valuation path (see universe.yaml).
+#
+# NOT FILLED IN: stake sizes must come from the holding company's latest annual report or
+# shareholding filing. Until every input is set, the report shows "SOTP needs inputs" rather
+# than a made-up number.
+#
+# listed:   symbol = NSE symbol of the listed investee; shares_held = number of its shares the
+#           holdco owns (not a percentage - this avoids needing the investee's share count)
+# unlisted: value_cr = value of 100% of the business in Rs crore; stake = fraction owned;
+#           basis = how value_cr was set (e.g. "1.5x FY25 book value per annual report p.87")
+# holdco_discount defaults to valuation.yaml -> sotp.holdco_discount
+
+holdcos:
+  CHOLAHLDNG:
+    listed:
+      - symbol: CHOLAFIN        # Cholamandalam Investment and Finance
+        shares_held: null       # fill from CHOLAHLDNG annual report
+    unlisted:
+      - name: Cholamandalam MS General Insurance
+        value_cr: null
+        stake: null
+        basis: ""

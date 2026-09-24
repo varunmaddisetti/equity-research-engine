@@ -9,7 +9,7 @@ EXPECTED = {
     "corp_actions", "financials", "index_membership", "index_prices_daily", "ingest_log",
     "macro", "meta", "prices_daily", "securities", "shareholding", "valuations",
     "delivery_daily", "security_master", "price_events", "prices_adjusted", "price_anomalies",
-    "filings", "xbrl_facts",
+    "filings", "xbrl_facts", "metrics", "quality_flags", "peers",
 }
 
 
@@ -18,7 +18,7 @@ def test_init_db_is_idempotent(tmp_path: Path):
         init_db(con)
         init_db(con)
         assert set(list_tables(con)) == EXPECTED
-        assert con.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == "3"
+        assert con.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == "4"
 
 
 def test_financials_primary_key_keeps_restatements(tmp_path: Path):
@@ -67,6 +67,8 @@ def test_cli_sync_universe(tmp_path: Path, monkeypatch):
         assert con.execute("SELECT count(*) FROM index_membership").fetchone()[0] == 100
 
 
-def test_cli_unimplemented_ingest_exits_2():
-    r = runner.invoke(app, ["ingest", "shareholding"])
-    assert r.exit_code == 2
+def test_cli_help_lists_all_stages():
+    r = runner.invoke(app, ["--help"])
+    assert r.exit_code == 0
+    for cmd in ("ingest", "build", "check", "show", "universe", "db"):
+        assert cmd in r.stdout

@@ -19,7 +19,7 @@ import duckdb
 
 from ere.paths import DB_PATH
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Tables whose definition changed in v2. No v1 release ever wrote rows to them (ingest was
 # not implemented in v1), so dropping them on upgrade loses nothing.
@@ -234,6 +234,39 @@ DDL = [
         severity     VARCHAR NOT NULL,   -- warn | error
         value        DOUBLE,
         note         VARCHAR
+    )
+    """,
+    # ------------------------------------------------------------------ analytics (M3)
+    """
+    CREATE TABLE IF NOT EXISTS metrics (
+        isin     VARCHAR NOT NULL,
+        symbol   VARCHAR NOT NULL,
+        as_of    DATE NOT NULL,
+        metric   VARCHAR NOT NULL,
+        value    DOUBLE,
+        PRIMARY KEY (isin, as_of, metric)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS quality_flags (
+        isin       VARCHAR NOT NULL,
+        symbol     VARCHAR NOT NULL,
+        as_of      DATE NOT NULL,
+        flag       VARCHAR NOT NULL,
+        triggered  BOOLEAN,             -- NULL = not enough data to judge
+        value      DOUBLE,
+        threshold  DOUBLE,
+        note       VARCHAR,
+        PRIMARY KEY (isin, as_of, flag)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS peers (
+        isin       VARCHAR NOT NULL,
+        peer_isin  VARCHAR,             -- NULL when the peer is outside the universe
+        peer_symbol VARCHAR NOT NULL,
+        source     VARCHAR NOT NULL,    -- industry | override
+        PRIMARY KEY (isin, peer_symbol)
     )
     """,
     """

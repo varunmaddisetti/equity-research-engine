@@ -353,14 +353,26 @@ def ingest_financials(
 
 
 @ingest_app.command("shareholding")
-def ingest_shareholding() -> None:
-    """Quarterly shareholding pattern XBRL -> shareholding."""
-    _not_yet("M3")
+def ingest_shareholding(
+    symbols: str | None = typer.Option(None, help="Comma-separated, default: whole universe"),
+    offline: bool = typer.Option(False, help="Use cached files only"),
+) -> None:
+    """Promoter / public holding by quarter and promoter pledges -> shareholding."""
+    from ere.http import ExchangeClient
+    from ere.ingest.shareholding import ingest_shareholding as run
 
-
-def _not_yet(milestone: str) -> None:
-    console.print(f"[yellow]Not implemented yet - planned for {milestone}. See docs/PLAN.md.[/]")
-    raise typer.Exit(code=2)
+    client = None if offline else ExchangeClient(min_interval_s=1.0)
+    try:
+        with connect() as con:
+            init_db(con)
+            pairs = _universe_pairs(con, symbols)
+            with console.status("shareholding") as st:
+                stats = run(con, RAW_DIR, pairs, client=client, offline=offline,
+                            on_progress=lambda s: st.update(f"shareholding: {s}"))
+    finally:
+        if client:
+            client.close()
+    console.print(stats)
 
 
 # ------------------------------------------------------------------ build / check
@@ -388,6 +400,68 @@ def build_financials_cmd() -> None:
         init_db(con)
         stats = build_financials(con, CONFIG_DIR / "xbrl_mapping.yaml")
     console.print(stats)
+
+
+@build_app.command("analytics")
+def build_analytics_cmd(
+    as_of: str | None = typer.Option(None, help="YYYY-MM-DD, default: last trading day"),
+) -> None:
+    """Risk, liquidity, ratios, multiples, shareholding trend, quality flags, peers."""
+    from ere.analytics.build import build_analytics
+
+    with connect() as con:
+        init_db(con)
+        stats = build_analytics(con, load_valuation_config(), load_universe_config(),
+                                date.fromisoformat(as_of) if as_of else None)
+    console.print(stats)
+
+
+@build_app.command("valuation")
+def build_valuation_cmd(
+    history_years: int | None = typer.Option(None, help="Years of history for multiple bands"),
+) -> None:
+    """DCF / residual income / SOTP / multiples for every stock -> valuations."""
+    from ere.valuation.build import build_valuation
+
+    with connect() as con:
+        init_db(con)
+        with console.status("valuing (the multiple history takes a few minutes)"):
+            stats = build_valuation(con, load_valuation_config(), load_universe_config(),
+                                    CONFIG_DIR / "sotp.yaml", history_years)
+    console.print(stats)
+
+
+@app.command()
+def show(symbol: str) -> None:
+    """Print the analytics snapshot, flags and valuation ranges for one stock."""
+    from ere.analytics.build import latest_metrics
+    from ere.valuation.build import football_field
+
+    symbol = symbol.upper()
+    with connect(read_only=True) as con:
+        row = con.execute("SELECT isin, name, valuation_model FROM securities WHERE symbol = ?",
+                          [symbol]).fetchone()
+        if not row:
+            raise typer.Exit(f"{symbol} not in the universe")
+        isin, name, model = row
+        lm = latest_metrics(con)
+        flags = con.execute(
+            "SELECT flag, triggered, round(value, 3) AS value, threshold, note FROM quality_flags"
+            " WHERE isin = ? AND as_of = (SELECT max(as_of) FROM quality_flags) ORDER BY flag",
+            [isin]).df()
+        ff = football_field(con, isin) if con.execute(
+            "SELECT count(*) FROM valuations WHERE isin = ?", [isin]).fetchone()[0] else None
+    console.print(f"[bold]{symbol}[/] {name} - valuation path: {model}")
+    if len(lm) and isin in set(lm["isin"]):
+        m = lm[lm["isin"] == isin].drop(columns=["isin", "symbol"]).T.dropna()
+        m.columns = ["value"]
+        console.print(m.to_string())
+    if len(flags):
+        console.print("\n[bold]Quality flags[/]")
+        console.print(flags.to_string(index=False))
+    if ff is not None and len(ff):
+        console.print("\n[bold]Valuation ranges (Rs per share)[/]")
+        console.print(ff.round(1).to_string(index=False))
 
 
 @check_app.command("financials")
