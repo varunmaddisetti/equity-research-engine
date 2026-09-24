@@ -467,6 +467,77 @@ def report(
     console.print(f"Open: {target}")
 
 
+REPO_URL = "https://github.com/varunmaddisetti/equity-research-engine"
+
+
+@app.command()
+def publish(
+    site: str = typer.Option("reports", help="Folder with the rendered HTML"),
+    push: bool = typer.Option(True, help="--no-push builds the gh-pages commit only"),
+) -> None:
+    """Publish the rendered reports to the gh-pages branch (served by GitHub Pages)."""
+    from pathlib import Path
+
+    from ere.publish import publish_to_gh_pages
+
+    site_dir = Path(site) if Path(site).is_absolute() else CONFIG_DIR.parent / site
+    sha = publish_to_gh_pages(CONFIG_DIR.parent, site_dir, push=push)
+    console.print(f"gh-pages at {sha[:10]}" + (" (pushed)" if push else " (not pushed)"))
+    if push:
+        console.print("First time only: GitHub -> Settings -> Pages -> Deploy from a branch -> "
+                      "gh-pages / (root). The site appears at "
+                      "https://varunmaddisetti.github.io/equity-research-engine/")
+
+
+@app.command()
+def refresh(
+    download: bool = typer.Option(True, help="--no-download rebuilds from local data only"),
+    publish_site: bool = typer.Option(False, "--publish", help="Push reports to gh-pages"),
+) -> None:
+    """The weekly job: new data -> adjusted prices -> fundamentals -> analytics -> valuation
+    -> reports (-> publish). Safe to rerun; every download step is incremental."""
+    from datetime import timedelta
+
+    from ere.publish import publish_to_gh_pages, run_steps
+
+    recent = (date.today() - timedelta(days=400)).isoformat()
+    steps = []
+    if download:
+        steps += [
+            ("prices", lambda: ingest_prices(start="2016-01-01", end=None, delivery=True,
+                                             offline=False, force=False, interval=0.4), True),
+            ("corporate actions", lambda: ingest_corp_actions_cmd(start=recent, end=None,
+                                                                  offline=False), False),
+        ]
+    steps.append(("adjusted prices", lambda: build_prices(scope="universe"), True))
+    if download:
+        steps += [
+            ("filing index", lambda: ingest_filings_cmd(symbols=None, offline=False), False),
+            ("xbrl", lambda: ingest_xbrl_cmd(symbols=None, offline=False, retry_errors=False,
+                                             interval=0.5), False),
+            ("shareholding", lambda: ingest_shareholding(symbols=None, offline=False), False),
+        ]
+    steps += [
+        ("financials", lambda: build_financials_cmd(), False),
+        ("analytics", lambda: build_analytics_cmd(as_of=None), True),
+        ("valuation", lambda: build_valuation_cmd(history_years=None), True),
+        ("reports", lambda: report(symbol=None, all_=True, out="reports", pdf=False,
+                                   repo_url=REPO_URL), True),
+    ]
+    if publish_site:
+        steps.append(("publish", lambda: publish_to_gh_pages(
+            CONFIG_DIR.parent, CONFIG_DIR.parent / "reports"), True))
+    rep = run_steps(steps)
+    log_dir = DB_PATH.parent / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log = log_dir / f"refresh_{date.today():%Y%m%d}.txt"
+    log.write_text(rep.summary() + "\n")
+    console.print("\n[bold]Refresh summary[/]\n" + rep.summary())
+    console.print(f"log: {log}")
+    if not rep.ok:
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def show(symbol: str) -> None:
     """Print the analytics snapshot, flags and valuation ranges for one stock."""

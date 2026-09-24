@@ -29,12 +29,12 @@
 | # | Weeks | Deliverable | Done when |
 |---|---|---|---|
 | **M0** | 1 | Skeleton, config, universe, DuckDB schema, CLI, CI | `pytest` green; `ere config check` and `ere db sync-universe` work ✅ |
-| **M1** | 2–3 | Prices: NSE bhavcopy (legacy + UDiFF from Jul 2024), index closes, delivery %, corporate actions, ISIN chaining, adjusted prices | 10 years loaded; every `error` anomaly in `ere check prices` for index stocks explained or fixed. Code ✅, first full run pending |
+| **M1** | 2–3 | Prices: NSE bhavcopy (legacy + UDiFF from Jul 2024), index closes, delivery %, corporate actions, ISIN chaining, adjusted prices | 10 years loaded; every `error` anomaly in `ere check prices` for index stocks explained or fixed. ✅ done (0 errors, 8 explained warnings) |
 | **M2** | 4–6 | Fundamentals: results XBRL (consolidated + standalone) from both NSE sources, element mapping, revisions kept point-in-time | Golden tests pass for 5 stocks (±0.5%); identity checks clean; unmapped elements reviewed. Code ✅, first full run pending |
-| **M3** | 7 | Shareholding, ratios, quality flags, beta, liquidity, peers | Ratios hand-checked for 5 stocks |
-| **M4** | 8–9 | DCF (scenarios, 5×5 sensitivity, reverse DCF), residual income, multiples, SOTP, EV/Sales | Toy cases match an Excel model exactly |
-| **M5** | 10 | Report template + charts + PDF | `ere report KAYNES` gives a clean 6–10 page report |
-| **M6** | 11 | Weekly GitHub Action, Pages index of 100 reports, README | Unattended refresh succeeds |
+| **M3** | 7 | Shareholding, ratios, quality flags, beta, liquidity, peers | Ratios hand-checked for 5 stocks. Code ✅ (synthetic tests), first real run pending |
+| **M4** | 8–9 | DCF (scenarios, 5×5 sensitivity, reverse DCF), residual income, multiples, SOTP, EV/Sales | Toy cases match a hand calculation exactly. Code ✅ (toy DCF checked line by line); SOTP inputs to fill |
+| **M5** | 10 | Report template + charts (+ optional PDF) | `ere report KAYNES` gives a clean report. Code ✅, checked visually on synthetic data (light, dark, phone) |
+| **M6** | 11 | Weekly refresh (launchd on the Mac; NSE blocks cloud IPs), `ere publish` to gh-pages, README | Unattended refresh succeeds. Code ✅, to be installed |
 | **M7** | 12+ | Point-in-time backtest: do stocks below their valuation range outperform over 12 months? | Quintile spreads + IC, no look-ahead, survivorship-free |
 
 Golden-test stocks for M2 (chosen to cover every path): **KAYNES** (DCF, capex-heavy growth),
@@ -72,3 +72,19 @@ Golden-test stocks for M2 (chosen to cover every path): **KAYNES** (DCF, capex-h
   SEBI Integrated Filing on a separate NSE endpoint (`integrated-filing-results`) with a new
   taxonomy (`in-capmkt`); element names are the same, so one parser matching local names
   handles both. Dimensional contexts (breakdowns) are skipped; periods come from context dates.
+- **M3-M6 (built unattended, Sept 2026):** shareholding endpoints verified live first
+  (promoter/public % from the shareholding master; pledges as % of promoter holding from the
+  pledge API). FII/DII splits, auditor changes, contingent liabilities and ASM/GSM lists are
+  known v1 gaps, shown as "not available" rather than guessed. All four stages are tested on a
+  synthetic market; real-data issues are expected on the first run, as in M1.
+
+## Known v1 gaps
+
+| Gap | Effect | Plan |
+|---|---|---|
+| FII / DII / MF holdings | Shareholding shows promoter and public only | Parse the shareholding XBRL (dimensional) |
+| Auditor change, contingent liabilities | Flags shown as "not available" | Annual-report parsing or manual input |
+| ASM / GSM surveillance lists | Flag not evaluated | NSE surveillance list download |
+| NBFC XBRL element names | Unverified until the first run | Fix from `xbrl_unmapped_elements.csv` |
+| SOTP stakes (CHOLAHLDNG) | Report says "needs inputs" | Fill `config/sotp.yaml` from the annual report |
+| Bank NIM | Approximated with advances + investments | Needs interest-earning assets from annual reports |
