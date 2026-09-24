@@ -12,7 +12,9 @@ Stocks:
   CCC  demerger on 2024-07-10: price 100 -> 60; "Demerger" corporate action on record
   DDD  genuine 30% crash on 2024-07-11; nothing on record
   EEE  renamed from EEEOLD to EEE on 2024-07-08, same ISIN
-  FFF  1:10 split on 2024-07-08 with a new ISIN but NO corporate action on record
+  FFF  1:10 split on 2024-07-08 with NO corporate action on record. As NSE really does it,
+       the ex-date prints under the OLD ISIN and the new ISIN appears a session later
+  GGG  no NSE trades on 2024-07-09 and 07-10, then back 30% higher (a gap, not a one-day move)
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ HOLIDAY = date(2024, 7, 5)
 A_OLD, A_NEW = "INE000A01011", "INE000A01029"
 B, C, D, E = "INE000B01011", "INE000C01011", "INE000D01011", "INE000E01011"
 F_OLD, F_NEW = "INE000F01011", "INE000F01029"
+G = "INE000G01011"
 
 
 def _closes() -> dict[date, list[tuple[str, str, float, float]]]:
@@ -50,9 +53,11 @@ def _closes() -> dict[date, list[tuple[str, str, float, float]]]:
             row("C", "CCC", C, 100.0 if d < date(2024, 7, 10) else 60.0),
             row("D", "DDD", D, 200.0 if d < date(2024, 7, 11) else 140.0),
             row("E", "EEEOLD" if d < date(2024, 7, 8) else "EEE", E, 50.0),
-            row("F", "FFF", F_OLD if d < date(2024, 7, 8) else F_NEW,
+            row("F", "FFF", F_OLD if d < date(2024, 7, 9) else F_NEW,
                 900.0 if d < date(2024, 7, 8) else 90.0),
         ]
+        if d not in (date(2024, 7, 9), date(2024, 7, 10)):
+            rows.append(row("G", "GGG", G, 100.0 if d < date(2024, 7, 9) else 130.0))
         out[d] = rows
     return out
 

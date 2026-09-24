@@ -13,6 +13,7 @@ from fixtures_nse import (
     D,
     E,
     FakeClient,
+    G,
     market_files,
     write_raw_cache,
 )
@@ -51,7 +52,7 @@ def test_security_master_chains_split_isin_and_keeps_rename(con):
     assert m.loc[A_OLD, "security_id"] == A_NEW == m.loc[A_NEW, "security_id"]
     assert m.loc[E, "security_id"] == E and m.loc[E, "symbol"] == "EEE"
     assert m.loc[F_OLD, "security_id"] == F_NEW
-    assert m["security_id"].nunique() == 6
+    assert m["security_id"].nunique() == 7
 
 
 def test_recycled_symbol_is_not_chained(tmp_path):
@@ -145,7 +146,7 @@ def test_wrong_factor_on_record_is_caught_by_prices(con, tmp_path):
     build_adjusted_prices(con, tmp_path / "none.yaml", scope="all")
     rows = con.execute("SELECT kind, severity FROM price_anomalies WHERE security_id = ?",
                        [B]).fetchall()
-    assert ("event_not_in_prices", "error") in rows
+    assert ("event_not_in_prices", "warn") in rows  # adjusted return -25%: past the circuit
 
 
 def test_wrong_date_on_record_is_caught(con, tmp_path):
@@ -165,6 +166,24 @@ def test_reviewed_move_is_silenced(con, tmp_path):
     build_adjusted_prices(con, p, scope="all")
     assert con.execute("SELECT count(*) FROM price_anomalies WHERE security_id = ?",
                        [D]).fetchone()[0] == 0
+
+
+def test_move_after_missing_sessions_is_a_gap_move(con, tmp_path):
+    build_adjusted_prices(con, tmp_path / "none.yaml", scope="all")
+    rows = con.execute("SELECT kind, severity, note FROM price_anomalies WHERE security_id = ?",
+                       [G]).fetchall()
+    assert len(rows) == 1 and rows[0][:2] == ("gap_move", "warn")
+    assert "2 session" in rows[0][2]
+
+
+def test_ex_date_move_at_circuit_limit_is_accepted(con, tmp_path):
+    # Real case (CGCL 2024): correct factor, stock then hit its 20% upper circuit on the ex-date.
+    con.execute("UPDATE prices_daily SET close = 300.0 WHERE isin = ? AND date = '2024-07-03'",
+                [B])  # 250 would be flat after the 1:1 bonus; 300 is exactly +20%
+    build_adjusted_prices(con, tmp_path / "none.yaml", scope="all")
+    kinds = {k for (k,) in con.execute(
+        "SELECT kind FROM price_anomalies WHERE security_id = ?", [B]).fetchall()}
+    assert "event_not_in_prices" not in kinds
 
 
 def test_universe_scope_only_builds_index_members(con, tmp_path):
@@ -194,6 +213,7 @@ def test_cli_offline_pipeline(tmp_path, monkeypatch):
     assert res.exit_code == 0, res.output
     res = r.invoke(cli.app, ["check", "prices"])
     assert res.exit_code == 0, res.output
+    assert "with missing sessions" in " ".join(res.output.split())
     assert (tmp_path / "processed" / "price_checks.csv").exists()
     res = r.invoke(cli.app, ["db", "status"])
     assert "ingest log" in res.output

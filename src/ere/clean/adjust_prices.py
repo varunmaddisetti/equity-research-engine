@@ -21,13 +21,19 @@ adj_close is a *price* series: dividends are not reinvested.
 
 Anomalies (price_anomalies):
   event_not_in_prices  a corporate action was applied but the adjusted return on its ex-date
-                       is still > 20%: the factor or the date on record is wrong   (error)
+                       is still beyond the 20% circuit limit: the factor or date on record
+                       is probably wrong (warn; > 35%: error). A move of exactly 20% is a
+                       stock hitting its circuit on the ex-date and is accepted.
   inferred_split       split inferred at an ISIN change; review once               (warn)
+                       NSE often prints the ex-date under the OLD ISIN and switches ISIN a
+                       session later, so the jump is searched for around the change.
   isin_change_gap      ISIN changed with a big jump that is not a simple ratio     (error)
   demerger_approx      demerger factor approximated from prices                     (warn)
   large_move           |adjusted daily return| > 25% on a non-event day; most smallcaps have
                        20% circuit limits, so check for a missed action (warn; > 50%: error).
                        Moves you have checked and accept go in reviewed_moves.
+  gap_move             same size of move, but the stock had sessions with no NSE trades just
+                       before it, so the return spans several days (warn)
 """
 
 from __future__ import annotations
@@ -47,7 +53,9 @@ from ere.clean.security_master import build_security_master
 
 LARGE_MOVE_WARN = 0.25
 LARGE_MOVE_ERROR = 0.50
-EVENT_CHECK_TOL = 0.20
+EVENT_CHECK_TOL = 0.21       # 20% circuit limit plus tick rounding
+EVENT_CHECK_ERROR = 0.35
+ISIN_SEARCH = (-2, 1)        # sessions around an ISIN change to look for the split jump
 MIN_JUMP = 1.25              # an ISIN-change jump smaller than 25% is not treated as a split
 SNAP_TOL = 0.08              # snap to a simple ratio if within 8% (absorbs the day's move)
 DEMERGER_MIN_DROP = 0.15
@@ -140,6 +148,7 @@ def compute_adjustments(
     corp_actions: pd.DataFrame,
     manual: pd.DataFrame,
     reviewed: pd.DataFrame | None = None,
+    calendar: np.ndarray | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Pure function (easy to test).
 
@@ -147,6 +156,7 @@ def compute_adjustments(
     corp_actions: security_id, ex_date, action, factor
     manual:       security_id, ex_date, factor, note
     reviewed:     security_id, date            (large moves already checked by a human)
+    calendar:     every NSE session date; used to spot returns that span missing sessions
     Returns (prices_adjusted, price_events, price_anomalies).
     """
     prices = prices.sort_values(["security_id", "date"]).reset_index(drop=True)
@@ -193,16 +203,22 @@ def compute_adjustments(
 
         # 3. splits inferred at ISIN changes
         isins = px["isin"].to_numpy()
-        for i in np.flatnonzero(isins[1:] != isins[:-1]) + 1:
-            r = raw_ratio[i]
-            if not np.isfinite(r) or abs(math.log(r)) < math.log(MIN_JUMP):
+        for ic in np.flatnonzero(isins[1:] != isins[:-1]) + 1:
+            if _near_event(dates, ev, ic):
                 continue
-            if _near_event(dates, ev, i):
+            window = [j for j in range(max(1, ic + ISIN_SEARCH[0]),
+                                       min(len(dates), ic + ISIN_SEARCH[1] + 1))
+                      if np.isfinite(raw_ratio[j])]
+            if not window:
+                continue
+            i = max(window, key=lambda j: abs(math.log(raw_ratio[j])))
+            r = raw_ratio[i]
+            if abs(math.log(r)) < math.log(MIN_JUMP):
                 continue
             f = snap_ratio(r)
             d = dates[i]
             if f is not None:
-                ev[d] = (f, "inferred_isin_change", f"ISIN {isins[i - 1]} -> {isins[i]}")
+                ev[d] = (f, "inferred_isin_change", f"ISIN {isins[ic - 1]} -> {isins[ic]}")
                 anomalies.append((sid, d, "inferred_split", "warn", f,
                                   f"no split on record; price ratio {r:.4f} snapped to {f:.4f}"))
             else:
@@ -238,17 +254,30 @@ def compute_adjustments(
         out["ret_1d"] = out["adj_close"].pct_change()
         adjusted.append(out)
 
+        # sessions with no row between consecutive rows (0 = back-to-back)
+        if calendar is not None:
+            ci = np.searchsorted(calendar, sessions)
+            missed = np.r_[0, np.diff(ci) - 1]
+        else:
+            missed = np.zeros(len(dates), dtype=int)
+
         # verification
         for i, (d, ret) in enumerate(zip(dates, out["ret_1d"], strict=False)):
             if i == 0 or not np.isfinite(ret):
                 continue
             if d in ev:
                 if ev[d][1] == "corp_action" and abs(ret) > EVENT_CHECK_TOL:
-                    anomalies.append((sid, d, "event_not_in_prices", "error", ret,
+                    sev = "error" if abs(ret) > EVENT_CHECK_ERROR else "warn"
+                    anomalies.append((sid, d, "event_not_in_prices", sev, ret,
                                       f"{ev[d][2]} factor {ev[d][0]:.4f} applied but adjusted "
                                       f"return is {ret:+.1%} (raw {raw_ratio[i] - 1:+.1%})"))
                 continue
-            if abs(ret) > LARGE_MOVE_WARN and (sid, d) not in reviewed_keys:
+            if abs(ret) <= LARGE_MOVE_WARN or (sid, d) in reviewed_keys:
+                continue
+            if missed[i] > 0:
+                anomalies.append((sid, d, "gap_move", "warn", ret,
+                                  f"return spans {missed[i]} session(s) with no NSE trades"))
+            else:
                 sev = "error" if abs(ret) > LARGE_MOVE_ERROR else "warn"
                 anomalies.append((sid, d, "large_move", sev, ret,
                                   "check for a missing split/bonus/demerger"))
@@ -318,7 +347,9 @@ def build_adjusted_prices(
                                else pd.Series(dtype=str))
     reviewed = reviewed.dropna(subset=["security_id"])
 
-    adj, events, anomalies = compute_adjustments(prices, ca, manual, reviewed)
+    calendar = con.execute("SELECT DISTINCT date FROM prices_daily ORDER BY date").df()[
+        "date"].values.astype("datetime64[ns]")
+    adj, events, anomalies = compute_adjustments(prices, ca, manual, reviewed, calendar)
 
     for table, df in (("prices_adjusted", adj), ("price_events", events),
                       ("price_anomalies", anomalies)):

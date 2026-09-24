@@ -29,3 +29,7 @@ reviewed_moves:
   - symbol: RPOWER
     date: 2019-02-05
     note: "Continuation of the group sell-off"
+  - symbol: FORCEMOT
+    date: 2024-02-14
+    note: "Absent from NSE bhavcopies for several sessions before (checked in raw files);
+      the +32% spans that gap, it is not a one-day move"

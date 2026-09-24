@@ -315,8 +315,11 @@ def check_prices(
     with connect(read_only=True) as con:
         coverage = con.execute(
             """
+            WITH cal AS (SELECT DISTINCT date FROM prices_daily)
             SELECT s.symbol, s.short_history,
                    min(a.date) AS first_date, max(a.date) AS last_date, count(a.date) AS days,
+                   (SELECT count(*) FROM cal WHERE cal.date BETWEEN min(a.date) AND max(a.date))
+                     - count(a.date) AS missing_sessions,
                    count(DISTINCT a.isin) AS isins,
                    (SELECT count(*) FROM price_events e WHERE e.security_id = s.isin) AS events,
                    (SELECT count(*) FROM price_anomalies x
@@ -354,7 +357,9 @@ def check_prices(
     console.print(coverage.head(25).to_string(index=False))
     console.print(
         f"\n{len(coverage)} stocks | no price data: {len(no_data)} | "
-        f"with errors: {(coverage.errors > 0).sum()} | with warnings: {(coverage.warns > 0).sum()}"
+        f"with errors: {(coverage.errors > 0).sum()} | "
+        f"with warnings: {(coverage.warns > 0).sum()} | "
+        f"with missing sessions: {(coverage.missing_sessions > 0).sum()}"
     )
     console.print(f"Full tables: {PROCESSED_DIR / 'price_checks.csv'} and price_anomalies.csv")
 

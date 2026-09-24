@@ -61,3 +61,9 @@ Golden-test stocks for M2 (chosen to cover every path): **KAYNES** (DCF, capex-h
   1.0 on all 42 split/bonus ex-dates). Verification now uses the price series itself, splits
   missing from the corporate-action record are inferred at ISIN changes, and demergers on record
   get an approximate factor.
+- **M1 review of the last flags:** (1) NSE often prints a split's ex-date under the old ISIN
+  and switches ISIN a session later (KARURVYSYA, CGCL 2016), so inferred splits are searched
+  for around the ISIN change. (2) A stock can hit its 20% upper circuit on an ex-date (CGCL 2024,
+  +20.0% after a correct 0.25 factor), so the ex-date check tolerates the circuit limit.
+  (3) Only FORCEMOT has missing sessions: it is absent from NSE's own files (NSE listing from
+  Aug 2019, plus a few days in Feb 2024), so moves across gaps are reported as `gap_move`.
