@@ -274,10 +274,82 @@ def ingest_corp_actions_cmd(
     console.print(by.to_string(index=False))
 
 
+def _universe_pairs(con, symbols: str | None) -> list[tuple[str, str]]:
+    rows = con.execute(
+        "SELECT symbol, isin FROM securities WHERE in_index ORDER BY symbol").fetchall()
+    if not rows:
+        raise typer.Exit("universe not loaded - run `ere db sync-universe` first")
+    if symbols:
+        wanted = {s.strip().upper() for s in symbols.split(",")}
+        rows = [r for r in rows if r[0] in wanted]
+    return rows
+
+
+@ingest_app.command("filings")
+def ingest_filings_cmd(
+    symbols: str | None = typer.Option(None, help="Comma-separated, default: whole universe"),
+    offline: bool = typer.Option(False, help="Use cached index files only"),
+) -> None:
+    """List every results filing with an XBRL file (2018 onwards) -> filings."""
+    from ere.http import ExchangeClient
+    from ere.ingest.filings import ingest_filing_index
+
+    client = None if offline else ExchangeClient(min_interval_s=1.0)
+    try:
+        with connect() as con:
+            init_db(con)
+            pairs = _universe_pairs(con, symbols)
+            with console.status("fetching filing indexes") as st:
+                stats = ingest_filing_index(
+                    con, RAW_DIR, pairs, client=client, offline=offline,
+                    on_progress=lambda s: st.update(f"filing index: {s}"))
+            summary = con.execute(
+                "SELECT source, basis, count(*) AS n, min(period_end) AS first_period, "
+                "max(period_end) AS last_period "
+                "FROM filings GROUP BY 1, 2 ORDER BY 1, 2").df()
+    finally:
+        if client:
+            client.close()
+    console.print(stats)
+    console.print(summary.to_string(index=False))
+
+
+@ingest_app.command("xbrl")
+def ingest_xbrl_cmd(
+    symbols: str | None = typer.Option(None, help="Comma-separated, default: all pending"),
+    offline: bool = typer.Option(False, help="Parse cached files only"),
+    retry_errors: bool = typer.Option(False, help="Also retry filings that failed before"),
+    interval: float = typer.Option(0.5, help="Seconds between downloads"),
+) -> None:
+    """Download and parse pending XBRL filings -> xbrl_facts. Resumable."""
+    from ere.http import ExchangeClient
+    from ere.ingest.xbrl import ingest_xbrl
+
+    client = None if offline else ExchangeClient(min_interval_s=interval, prime_url=None)
+    sym_list = [s.strip().upper() for s in symbols.split(",")] if symbols else None
+    try:
+        with connect() as con:
+            init_db(con)
+            n = con.execute("SELECT count(*) FROM filings WHERE status = 'pending'").fetchone()[0]
+            with console.status(f"{n} filings pending") as st:
+                stats = ingest_xbrl(
+                    con, RAW_DIR, client=client, offline=offline, symbols=sym_list,
+                    retry_errors=retry_errors,
+                    on_progress=lambda s, f: st.update(f"parsed {s} {f}"))
+    finally:
+        if client:
+            client.close()
+    console.print(stats)
+
+
 @ingest_app.command("financials")
-def ingest_financials() -> None:
-    """Results XBRL (consolidated + standalone) -> financials."""
-    _not_yet("M2")
+def ingest_financials(
+    symbols: str | None = typer.Option(None, help="Comma-separated, default: whole universe"),
+) -> None:
+    """All of M2 in one go: filings index, XBRL download/parse, build financials."""
+    ingest_filings_cmd(symbols=symbols, offline=False)
+    ingest_xbrl_cmd(symbols=symbols, offline=False, retry_errors=False, interval=0.5)
+    build_financials_cmd()
 
 
 @ingest_app.command("shareholding")
@@ -305,6 +377,77 @@ def build_prices(
     console.print(stats)
     if stats.anomalies_warn or stats.anomalies_error:
         console.print("Run `ere check prices` to review anomalies.")
+
+
+@build_app.command("financials")
+def build_financials_cmd() -> None:
+    """Map XBRL facts to standard fields (rerun after editing config/xbrl_mapping.yaml)."""
+    from ere.clean.financials import build_financials
+
+    with connect() as con:
+        init_db(con)
+        stats = build_financials(con, CONFIG_DIR / "xbrl_mapping.yaml")
+    console.print(stats)
+
+
+@check_app.command("financials")
+def check_financials() -> None:
+    """Coverage, accounting identities and unmapped elements -> data/processed/*.csv"""
+    from ere.clean.fin_checks import coverage, identity_failures, unmapped_elements
+    from ere.clean.financials import fundamentals
+
+    with connect(read_only=True) as con:
+        wide = fundamentals(con)
+        cov = coverage(con, wide)
+        fails = identity_failures(wide) if len(wide) else pd.DataFrame()
+        unmapped = unmapped_elements(con, CONFIG_DIR / "xbrl_mapping.yaml")
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    cov.to_csv(PROCESSED_DIR / "fin_coverage.csv", index=False)
+    fails.to_csv(PROCESSED_DIR / "fin_identity_failures.csv", index=False)
+    unmapped.to_csv(PROCESSED_DIR / "xbrl_unmapped_elements.csv", index=False)
+    if len(wide):
+        wide.to_csv(PROCESSED_DIR / "fundamentals_wide.csv", index=False)
+
+    console.print("[bold]Weakest coverage[/] (fy_years / quarters with top line and PAT)")
+    console.print(cov.head(15).to_string(index=False))
+    if len(fails):
+        console.print("\n[bold]Identity check failures[/]")
+        console.print(fails.groupby("check").size().rename("n").to_string())
+    console.print("\n[bold]Most frequent unmapped elements[/]")
+    console.print(unmapped.head(15).to_string(index=False))
+    console.print(
+        f"\n{len(cov)} stocks | with >= 5 FY: {(cov.fy_years >= 5).sum()} | "
+        f"no filings: {(cov.filings == 0).sum()} | failed downloads/parses: {cov.failed.sum()} | "
+        f"identity failures: {len(fails)}")
+    console.print(f"Full tables in {PROCESSED_DIR}: fin_coverage.csv, fin_identity_failures.csv, "
+                  "xbrl_unmapped_elements.csv, fundamentals_wide.csv")
+
+
+@check_app.command("golden")
+def check_golden(
+    path: str = typer.Option("config/golden/golden_fy25.csv", help="Hand-typed figures"),
+) -> None:
+    """Compare extracted figures with numbers typed from annual reports (0.5% tolerance)."""
+    from pathlib import Path
+
+    from ere.clean.fin_checks import golden_compare
+
+    p = Path(path)
+    if not p.is_absolute():
+        p = CONFIG_DIR.parent / p
+    with connect(read_only=True) as con:
+        res = golden_compare(con, p)
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    res.to_csv(PROCESSED_DIR / "golden_results.csv", index=False)
+    filled = res[res.status != "blank"]
+    if filled.empty:
+        console.print("No figures filled in yet - add 'expected' values to the golden CSV.")
+        return
+    console.print(filled.to_string(index=False))
+    counts = filled.status.value_counts()
+    console.print(f"\npass: {counts.get('pass', 0)} / {len(filled)} filled "
+                  f"| FAIL: {counts.get('FAIL', 0)} | other: "
+                  f"{len(filled) - counts.get('pass', 0) - counts.get('FAIL', 0)}")
 
 
 @check_app.command("prices")

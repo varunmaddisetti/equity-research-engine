@@ -30,7 +30,7 @@
 |---|---|---|---|
 | **M0** | 1 | Skeleton, config, universe, DuckDB schema, CLI, CI | `pytest` green; `ere config check` and `ere db sync-universe` work ✅ |
 | **M1** | 2–3 | Prices: NSE bhavcopy (legacy + UDiFF from Jul 2024), index closes, delivery %, corporate actions, ISIN chaining, adjusted prices | 10 years loaded; every `error` anomaly in `ere check prices` for index stocks explained or fixed. Code ✅, first full run pending |
-| **M2** | 4–6 | Fundamentals: results XBRL (consolidated + standalone), tag mapping, restatements kept | Golden tests pass for 5 stocks (±0.5%); ≥90% field fill for the rest; unmapped tags logged |
+| **M2** | 4–6 | Fundamentals: results XBRL (consolidated + standalone) from both NSE sources, element mapping, revisions kept point-in-time | Golden tests pass for 5 stocks (±0.5%); identity checks clean; unmapped elements reviewed. Code ✅, first full run pending |
 | **M3** | 7 | Shareholding, ratios, quality flags, beta, liquidity, peers | Ratios hand-checked for 5 stocks |
 | **M4** | 8–9 | DCF (scenarios, 5×5 sensitivity, reverse DCF), residual income, multiples, SOTP, EV/Sales | Toy cases match an Excel model exactly |
 | **M5** | 10 | Report template + charts + PDF | `ere report KAYNES` gives a clean 6–10 page report |
@@ -67,3 +67,8 @@ Golden-test stocks for M2 (chosen to cover every path): **KAYNES** (DCF, capex-h
   +20.0% after a correct 0.25 factor), so the ex-date check tolerates the circuit limit.
   (3) Only FORCEMOT has missing sessions: it is absent from NSE's own files (NSE listing from
   Aug 2019, plus a few days in Feb 2024), so moves across gaps are reported as `gap_move`.
+- **M2 source check (Sept 2026, before coding):** XBRL results exist only from ~2018 (older
+  filings show no XBRL link), so fundamentals cover ~8 years. From Q4 FY25 results moved to
+  SEBI Integrated Filing on a separate NSE endpoint (`integrated-filing-results`) with a new
+  taxonomy (`in-capmkt`); element names are the same, so one parser matching local names
+  handles both. Dimensional contexts (breakdowns) are skipped; periods come from context dates.

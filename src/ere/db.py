@@ -19,7 +19,7 @@ import duckdb
 
 from ere.paths import DB_PATH
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Tables whose definition changed in v2. No v1 release ever wrote rows to them (ingest was
 # not implemented in v1), so dropping them on upgrade loses nothing.
@@ -131,18 +131,51 @@ DDL = [
         PRIMARY KEY (isin, quarter_end, category)
     )
     """,
+    # One row per results filing (XBRL instance) listed by NSE.
+    """
+    CREATE TABLE IF NOT EXISTS filings (
+        filing_id    VARCHAR PRIMARY KEY,  -- XBRL file name, unique per filing
+        isin         VARCHAR NOT NULL,     -- current ISIN of the security (security_id)
+        symbol       VARCHAR NOT NULL,
+        source       VARCHAR NOT NULL,     -- nse_results (2018-2025) | nse_integrated (2025-)
+        period_end   DATE NOT NULL,
+        period_start DATE,
+        basis        VARCHAR NOT NULL,     -- consolidated | standalone
+        audited      BOOLEAN,
+        is_bank      BOOLEAN NOT NULL,
+        is_revision  BOOLEAN NOT NULL,
+        filed_at     TIMESTAMP NOT NULL,   -- when the market could first see it
+        xbrl_url     VARCHAR NOT NULL,
+        status       VARCHAR NOT NULL DEFAULT 'pending',  -- pending | parsed | missing | error
+        message      VARCHAR
+    )
+    """,
+    # Every numeric fact from every filing, exactly as filed (non-dimensional contexts only).
+    """
+    CREATE TABLE IF NOT EXISTS xbrl_facts (
+        filing_id     VARCHAR NOT NULL,
+        element       VARCHAR NOT NULL,   -- local name, e.g. RevenueFromOperations
+        period_start  DATE NOT NULL,      -- equals period_end for instants
+        period_end    DATE NOT NULL,
+        is_instant    BOOLEAN NOT NULL,   -- balance-sheet style fact
+        value         DOUBLE NOT NULL,
+        unit          VARCHAR,
+        PRIMARY KEY (filing_id, element, period_start, period_end)
+    )
+    """,
     """
     CREATE TABLE IF NOT EXISTS financials (
         isin         VARCHAR NOT NULL,
         symbol       VARCHAR NOT NULL,
         period_end   DATE NOT NULL,
-        period_type  VARCHAR NOT NULL,   -- Q | H | FY
+        period_type  VARCHAR NOT NULL,   -- Q | H | 9M | FY (durations) | BS (balance sheet date)
         basis        VARCHAR NOT NULL,   -- consolidated | standalone
         field        VARCHAR NOT NULL,   -- standard field name from xbrl_mapping.yaml
         value        DOUBLE,
         unit         VARCHAR NOT NULL DEFAULT 'INR',
         xbrl_tag     VARCHAR,
         filing_date  DATE NOT NULL,      -- when the market could first see it
+        filing_id    VARCHAR,
         is_restated  BOOLEAN NOT NULL DEFAULT FALSE,
         source       VARCHAR NOT NULL,
         PRIMARY KEY (isin, period_end, period_type, basis, field, filing_date)
@@ -249,6 +282,9 @@ def init_db(con: duckdb.DuckDBPyConnection) -> None:
     if version is not None and version < 2:
         for t in _CHANGED_IN_V2 + ["ingest_log"]:
             con.execute(f'DROP TABLE IF EXISTS "{t}"')
+    if version is not None and version < 3:
+        # financials gained filing_id; no release before v3 wrote to it.
+        con.execute('DROP TABLE IF EXISTS "financials"')
     for stmt in DDL:
         con.execute(stmt)
     con.execute(

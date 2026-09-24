@@ -1,63 +1,111 @@
-# XBRL tag -> standard field mapping (starter set).
+# XBRL element -> standard field.
 #
-# Tags are from the SEBI/NSE "financial results" XBRL taxonomy (Ind AS, non-banking and banking formats).
-# STATUS: unvalidated starter list. M2 validates each tag against real filings and logs
-# every unmapped tag to data/processed/unmapped_tags.parquet so this file grows iteratively.
-# A standard field may list several candidate tags; the first one present in a filing wins.
+# Element names are matched on their LOCAL name, so the same list works for both taxonomies
+# NSE has used: `in-bse-fin` (financial results, 2018 - early 2025) and `in-capmkt`
+# (SEBI Integrated Filing - Financials, from Q4 FY25). Names below were checked against live
+# filings in Sept 2026 (KAYNES Ind AS, KARURVYSYA banking).
+#
+# A field may list several candidate elements; the first one present in a filing wins.
+# `ere check financials` writes data/processed/xbrl_unmapped_elements.csv listing frequent
+# elements that are not mapped, so this file can grow from evidence.
+#
+# Values are stored exactly as filed: INR for amounts (the XBRL holds full rupees whatever the
+# "level of rounding" in the PDF), INR per share for EPS / face value, percent for ratios.
 
 income_statement:
-  revenue:              [RevenueFromOperations]
-  other_income:         [OtherIncome]
-  total_income:         [Income]
-  cost_of_materials:    [CostOfMaterialsConsumed]
-  purchases_traded:     [PurchasesOfStockInTrade]
-  inventory_change:     [ChangesInInventoriesOfFinishedGoodsWorkInProgressAndStockInTrade]
-  employee_cost:        [EmployeeBenefitExpense]
-  finance_cost:         [FinanceCosts]
-  depreciation:         [DepreciationDepletionAndAmortisationExpense]
-  other_expenses:       [OtherExpenses]
-  total_expenses:       [Expenses]
-  exceptional_items:    [ExceptionalItemsBeforeTax]
-  pbt:                  [ProfitBeforeTax]
-  tax:                  [TaxExpense]
-  pat:                  [ProfitLossForPeriod]
-  pat_owners:           [ProfitOrLossAttributableToOwnersOfParent]
-  eps_basic:            [BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations, BasicEarningsLossPerShareFromContinuingOperations]
-  paid_up_capital:      [PaidUpValueOfEquityShareCapital]
-  face_value:           [FaceValueOfEquityShareCapital]
+  revenue:            [RevenueFromOperations]
+  other_income:       [OtherIncome]
+  total_income:       [Income]
+  cost_of_materials:  [CostOfMaterialsConsumed]
+  purchases_traded:   [PurchasesOfStockInTrade]
+  inventory_change:   [ChangesInInventoriesOfFinishedGoodsWorkInProgressAndStockInTrade]
+  employee_cost:      [EmployeeBenefitExpense, EmployeesCost]
+  finance_cost:       [FinanceCosts]
+  depreciation:       [DepreciationDepletionAndAmortisationExpense, DepreciationAndAmortisationExpense]
+  other_expenses:     [OtherExpenses]
+  total_expenses:     [Expenses]
+  exceptional_items:  [ExceptionalItemsBeforeTax, ExceptionalItems]
+  pbt:                [ProfitBeforeTax, ProfitLossFromOrdinaryActivitiesBeforeTax]
+  tax:                [TaxExpense]
+  pat_continuing:     [ProfitLossForPeriodFromContinuingOperations, ProfitLossFromOrdinaryActivitiesAfterTax]
+  associates_share:   [ShareOfProfitLossOfAssociatesAndJointVenturesAccountedForUsingEquityMethod]
+  pat:                [ProfitLossForPeriod, ProfitLossForThePeriod]
+  pat_owners:         [ProfitOrLossAttributableToOwnersOfParent,
+                       ProfitLossAfterTaxesMinorityInterestAndShareOfProfitLossOfAssociates]
+  minority_share:     [ProfitOrLossAttributableToNonControllingInterests]
+  eps_basic:          [BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations,
+                       BasicEarningsLossPerShareFromContinuingOperations,
+                       BasicEarningsPerShareAfterExtraordinaryItems]
+  eps_diluted:        [DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations,
+                       DilutedEarningsLossPerShareFromContinuingOperations,
+                       DilutedEarningsPerShareAfterExtraordinaryItems]
+  paid_up_capital:    [PaidUpValueOfEquityShareCapital]
+  face_value:         [FaceValueOfEquityShareCapital]
 
-# Bank results use a different format (Schedule III banking).
 banking:
-  interest_earned:      [InterestEarned]
-  interest_expended:    [InterestExpended]
-  operating_profit:     [OperatingProfitBeforeProvisionAndContingencies]
-  provisions:           [ProvisionsOtherThanTaxAndContingencies]
-  gross_npa:            [GrossNonPerformingAssets]
-  net_npa:              [NonPerformingAssets]
-  gross_npa_pct:        [PercentageOfGrossNpa]
-  net_npa_pct:          [PercentageOfNpa]
-  return_on_assets:     [ReturnOnAssets]
-  cet1_ratio:           [CET1Ratio]
+  interest_earned:    [InterestEarned]
+  interest_on_advances: [InterestOrDiscountOnAdvancesOrBills]
+  interest_expended:  [InterestExpended]
+  operating_expenses: [OperatingExpenses]
+  operating_profit_pre_provision: [OperatingProfitBeforeProvisionAndContingencies]
+  provisions:         [ProvisionsOtherThanTaxAndContingencies]
+  gross_npa:          [GrossNonPerformingAssets]
+  net_npa:            [NonPerformingAssets]
+  gross_npa_pct:      [PercentageOfGrossNpa]
+  net_npa_pct:        [PercentageOfNpa]
+  return_on_assets:   [ReturnOnAssets]
+  cet1_ratio:         [CET1Ratio]
+  additional_tier1_ratio: [AdditionalTier1Ratio]
+  advances:           [Advances]
+  deposits:           [Deposits]
+  investments:        [Investments]
+  bank_borrowings:    [Borrowings]
+  capital:            [Capital]
+  reserves:           [ReservesAndSurplus]
+  cash_with_rbi:      [CashAndBalancesWithReserveBankOfIndia]
+  balances_with_banks: [BalancesWithBanksAndMoneyAtCallAndShortNotice]
 
-# Balance sheet and cash flow are only filed half-yearly / annually in results XBRL.
 balance_sheet:
-  total_equity:         [EquityAttributableToOwnersOfParent, Equity]
-  minority_interest:    [NonControllingInterest]
+  total_assets:       [Assets]
+  current_assets:     [CurrentAssets]
+  ppe:                [PropertyPlantAndEquipment, FixedAssets]
+  cwip:               [CapitalWorkInProgress]
+  goodwill:           [Goodwill]
+  noncurrent_investments: [NoncurrentInvestments]
+  inventories:        [Inventories]
+  trade_receivables:  [TradeReceivablesCurrent]
+  cash:               [CashAndCashEquivalents]
+  bank_balances_other: [BankBalanceOtherThanCashAndCashEquivalents]
+  current_investments: [CurrentInvestments]
+  share_capital:      [EquityShareCapital]
+  other_equity:       [OtherEquity]
+  equity_owners:      [EquityAttributableToOwnersOfParent]
+  minority_interest:  [NonControllingInterest]
+  equity_total:       [Equity]
   borrowings_noncurrent: [BorrowingsNoncurrent]
-  borrowings_current:   [BorrowingsCurrent]
-  cash:                 [CashAndCashEquivalents]
-  bank_balances_other:  [BankBalanceOtherThanCashAndCashEquivalents]
-  current_investments:  [CurrentInvestments]
-  trade_receivables:    [TradeReceivablesCurrent]
-  inventories:          [Inventories]
-  trade_payables:       [TradePayablesCurrent]
-  total_assets:         [Assets]
-  ppe:                  [PropertyPlantAndEquipment]
-  cwip:                 [CapitalWorkInProgress]
+  borrowings_current: [BorrowingsCurrent]
+  trade_payables:     [TradePayablesCurrent]
+  current_liabilities: [CurrentLiabilities]
+  total_liabilities:  [Liabilities]
+  equity_and_liabilities: [EquityAndLiabilities, CapitalAndLiabilities]
 
 cash_flow:
-  cfo:                  [NetCashFlowsFromUsedInOperatingActivities]
-  capex:                [PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities]
-  cfi:                  [NetCashFlowsFromUsedInInvestingActivities]
-  cff:                  [NetCashFlowsFromUsedInFinancingActivities]
-  dividends_paid:       [DividendsPaidClassifiedAsFinancingActivities]
+  cfo:                [CashFlowsFromUsedInOperatingActivities]
+  capex_ppe:          [PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities]
+  capex_intangibles:  [PurchaseOfIntangibleAssetsClassifiedAsInvestingActivities]
+  cfi:                [CashFlowsFromUsedInInvestingActivities]
+  cff:                [CashFlowsFromUsedInFinancingActivities]
+  dividends_paid:     [DividendsPaidClassifiedAsFinancingActivities]
+  lease_payments:     [PaymentsOfLeaseLiabilitiesClassifiedAsFinancingActivities]
+  interest_paid_financing: [InterestPaidClassifiedAsFinancingActivities]
+
+# NBFCs / HFCs file Ind AS "Division III" results. These names are NOT yet verified against a
+# live filing: confirm or fix them from the unmapped-elements report after the first run.
+nbfc:
+  interest_income:    [InterestIncome]
+  fee_commission_income: [FeesAndCommissionIncome]
+  impairment_on_financial_instruments: [ImpairmentOnFinancialInstruments]
+  loans:              [Loans]
+  debt_securities:    [DebtSecurities]
+  borrowings_other_than_debt_securities: [BorrowingsOtherThanDebtSecurities]
+  subordinated_liabilities: [SubordinatedLiabilities]

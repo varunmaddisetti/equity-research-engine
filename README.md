@@ -15,7 +15,8 @@ back to an exchange filing or price file, and every assumption lives in `config/
 |---|---|
 | M0 Skeleton, config, universe, schema, CLI, CI | ✅ done |
 | M1 Prices, index closes, delivery %, corporate actions, adjusted prices | ✅ 10.7 years loaded (2,658 sessions); anomaly review in progress |
-| M2 Fundamentals (results XBRL) | next |
+| M2 Fundamentals from results XBRL (2018 onwards) | ✅ code done, first full download pending |
+| M3 Ratios, quality flags, shareholding, beta | next |
 | M2–M7 | see [docs/PLAN.md](docs/PLAN.md) |
 
 ## Quick start
@@ -41,6 +42,28 @@ uv run ere check prices                          # coverage + anomalies -> data/
 
 Reruns only fetch new dates, so a weekly `ere ingest prices` takes seconds.
 `--offline` rebuilds the database from the raw files in `data/raw/` without the network.
+
+## Loading fundamentals (M2)
+
+```bash
+uv run ere ingest filings        # list every results filing with XBRL (~5 min)
+uv run ere ingest xbrl           # download + parse them (~1 hour first time; resumable)
+uv run ere build financials      # map XBRL elements to standard fields (seconds)
+uv run ere check financials      # coverage, accounting identities, unmapped elements
+uv run ere check golden          # compare with figures typed from annual reports
+```
+
+`ere ingest financials` runs the first three in one go.
+
+**Sources.** NSE's financial-results filings (XBRL from 2018 to early 2025, `in-bse-fin`
+taxonomy) and SEBI Integrated Filing – Financials (from Q4 FY25, `in-capmkt` taxonomy).
+Results before 2018 have no machine-readable version, so fundamentals start in 2018.
+Every value keeps the date it was filed; revisions are extra rows, never overwrites, so
+`fundamentals(as_of=...)` only returns what the market could see on that date.
+
+**Golden test.** `config/golden/golden_fy25.csv` lists FY25 figures for five stocks covering
+every valuation path (KAYNES, NATCOPHARM, CDSL, KARURVYSYA, MANAPPURAM). Type the numbers from
+each annual report (Rs crore) with the page number, then run `ere check golden`.
 
 **How adjustment works.** ISINs change on face-value splits, so `security_master` chains old
 and new ISINs into one security. Factors come from, in order: manual entries in
