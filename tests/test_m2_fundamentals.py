@@ -323,3 +323,20 @@ def test_quarters_gap_explained_by_discontinued_operations():
         "pat_discontinued": [np.nan] * 4 + [12.0]})
     f = identity_failures(w)
     assert list(f.check) == ["quarters_sum"] and f.explanation.iloc[0] == "discontinued_operations"
+
+
+def test_mistyped_paid_up_tag_alone_does_not_rescale_the_filing(con):
+    """KAYNES-style: only the paid-up capital tag is off by 10^5; revenue is fine."""
+    from ere.clean.financials import detect_scale_errors
+
+    con.execute("UPDATE xbrl_facts SET value = value * 100000 WHERE filing_id = "
+                "'INDAS_2_Q2_C.xml' AND element = 'PaidUpValueOfEquityShareCapital'")
+    fixes = detect_scale_errors(con)
+    assert list(fixes.scope) == ["paid_up"] and fixes.scale_factor.iloc[0] == 1e-5
+    stats = build_financials(con, MAPPING)
+    assert stats["scale_fixed_filings"] == 0 and stats["paid_up_tag_fixes"] == 1
+    w = fundamentals(con, ("Q",), isins=[T_ISIN]).set_index("period_end")
+    q2 = w.loc[pd.Timestamp("2024-09-30")]
+    assert q2.revenue == pytest.approx(110 * CR)          # untouched
+    assert q2.paid_up_capital == pytest.approx(50 * CR)   # corrected
+    assert q2.shares == pytest.approx(5 * CR)

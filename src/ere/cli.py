@@ -648,11 +648,13 @@ def check_financials() -> None:
                                                "explained: " + fails.explanation))
         console.print(summary.groupby(["check", "status"]).size().rename("n").to_string())
     with connect(read_only=True) as con:
-        scaled = con.execute("SELECT symbol, period_end, basis, scale_factor, filing_id FROM "
-                             "filings WHERE scale_factor <> 1 ORDER BY symbol, period_end").df()
+        scaled = con.execute(
+            "SELECT symbol, period_end, basis, scale_factor AS factor, scale_scope AS scope, "
+            "scale_note AS note FROM filings WHERE scale_factor <> 1 "
+            "ORDER BY scope, symbol, period_end").df()
     if len(scaled):
-        console.print("\n[bold]Filings with the wrong unit scale, corrected[/] "
-                      "(detected from paid-up capital)")
+        console.print("\n[bold]Unit-scale corrections[/] (scope all = whole filing rescaled; "
+                      "paid_up = only the paid-up capital tag)")
         console.print(scaled.to_string(index=False))
     console.print("\n[bold]Most frequent unmapped elements[/]")
     console.print(unmapped.head(15).to_string(index=False))

@@ -424,12 +424,14 @@ def _data_notes(con, isin: str, s: dict, m: dict) -> list[str]:
                      f"{str(f[2])[:16]}. Machine-readable results start in 2018.")
     else:
         notes.append("Fundamentals: no parsed XBRL filings for this stock.")
-    sc = con.execute("SELECT period_end, basis, scale_factor FROM filings WHERE isin = ? "
-                     "AND scale_factor <> 1 ORDER BY period_end", [isin]).fetchall()
-    for pe_, basis, fac in sc:
-        notes.append(f"The {basis} filing for the period ended {pe_} tagged its amounts at the "
-                     f"wrong unit scale; corrected by x{fac:,.0f} (detected from paid-up "
-                     "capital).")
+    sc = con.execute("SELECT period_end, basis, scale_factor, scale_scope, scale_note FROM "
+                     "filings WHERE isin = ? AND scale_factor <> 1 ORDER BY period_end",
+                     [isin]).fetchall()
+    for pe_, basis, fac, scope, note in sc:
+        what = ("all amounts were tagged at the wrong unit scale" if scope == "all"
+                else "the paid-up capital tag had the wrong unit scale")
+        notes.append(f"The {basis} filing for the period ended {pe_}: {what}; corrected by a "
+                     f"factor of {fac:g} ({note}).")
     r = con.execute("SELECT count(*) FROM financials WHERE isin = ? AND is_restated",
                     [isin]).fetchone()[0]
     if r:

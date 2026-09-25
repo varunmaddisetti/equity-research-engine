@@ -55,21 +55,52 @@ SCALE_BAND = (0.5, 2.0)
 MIN_FILINGS_FOR_SCALE = 4
 
 
-def detect_scale_errors(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    """Find filings whose rupee amounts are off by a power of ten.
+TOPLINE_ELEMENTS = ("RevenueFromOperations", "InterestEarned", "PremiumEarned", "Income")
+CONFIRM_BAND = (0.25, 4.0)
 
-    Real case (IRCON Q4 FY22): the document says "Lakhs" but amounts were tagged at 1/100 of
-    their rupee value, so FY revenue read Rs 74 cr instead of Rs 7,380 cr. The detector uses
-    paid-up share capital, which never moves by 100x or 1,000x (a bonus at most doubles it,
-    splits leave it unchanged), so a genuine collapse in revenue can never trigger it.
-    Returns filing_id, isin, symbol, ratio, scale_factor for flagged filings.
+
+def _topline_per_month(con) -> pd.DataFrame:
+    """Per filing: the shortest-period top-line figure, per month (for scale confirmation)."""
+    df = con.execute(
+        "SELECT f.filing_id, f.isin, f.period_end AS filing_period, x.element, x.value, "
+        "x.period_start, x.period_end FROM xbrl_facts x JOIN filings f USING (filing_id) "
+        "WHERE x.element IN (" + ",".join("?" * len(TOPLINE_ELEMENTS)) + ") "
+        "AND NOT x.is_instant AND x.unit = 'INR' AND x.value > 0",
+        list(TOPLINE_ELEMENTS)).df()
+    if df.empty:
+        return pd.DataFrame(columns=["filing_id", "isin", "filing_period", "per_month"])
+    df["months"] = ((pd.to_datetime(df.period_end) - pd.to_datetime(df.period_start)).dt.days
+                    / 30.44).round().clip(lower=1)
+    df["prio"] = df.element.map({e: i for i, e in enumerate(TOPLINE_ELEMENTS)})
+    df = df.sort_values(["filing_id", "prio", "months"]).drop_duplicates("filing_id")
+    df["per_month"] = df.value / df.months
+    df["filing_period"] = pd.to_datetime(df.filing_period)
+    return df[["filing_id", "isin", "filing_period", "per_month"]]
+
+
+def detect_scale_errors(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Find filings whose rupee amounts are off by a power of ten, and how far to trust it.
+
+    Real case (IRCON Q4 FY22): the document says "Lakhs" but every amount was tagged at 1/100
+    of its rupee value (FY revenue Rs 74 cr instead of Rs 7,380 cr).
+
+    Step 1 - candidate: paid-up share capital off the company's median by ~10^2/10^3/10^5/10^7.
+      Paid-up capital never moves like that (a bonus at most doubles it, splits leave it
+      unchanged), so business shocks cannot create a candidate.
+    Step 2 - confirmation with an independent figure: the filing's top line per month versus
+      the company's filings within a year either side.
+      * top line off by the same factor  -> scope 'all': the whole filing is mis-scaled
+      * top line normal                  -> scope 'paid_up': only that tag was mistyped
+        (first real run: KAYNES, FIVESTAR and others had a bad paid-up tag in otherwise
+        correct filings - rescaling everything would have destroyed good numbers)
+      * no top line / contradictory      -> scope 'paid_up', noted as unconfirmed
     """
     pu = con.execute(
         "SELECT f.filing_id, f.isin, f.symbol, max(x.value) AS paid_up FROM xbrl_facts x "
         "JOIN filings f USING (filing_id) WHERE x.element IN ("
         + ",".join("?" * len(PAID_UP_ELEMENTS)) + ") AND x.unit = 'INR' AND x.value > 0 "
         "GROUP BY 1, 2, 3", list(PAID_UP_ELEMENTS)).df()
-    out = []
+    cands = []
     for isin, g in pu.groupby("isin"):
         if len(g) < MIN_FILINGS_FOR_SCALE:
             continue
@@ -78,30 +109,54 @@ def detect_scale_errors(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
             ratio = r.paid_up / ref
             if 1 / 20 < ratio < 20:
                 continue
-            for k in SCALE_POWERS:
-                for f in (10.0 ** k, 10.0 ** -k):
-                    if SCALE_BAND[0] <= ratio * f <= SCALE_BAND[1]:
-                        out.append((r.filing_id, isin, r.symbol, ratio, f))
-                        break
+            fac = next((f for k in SCALE_POWERS for f in (10.0 ** k, 10.0 ** -k)
+                        if SCALE_BAND[0] <= ratio * f <= SCALE_BAND[1]), None)
+            if fac is not None:
+                cands.append((r.filing_id, isin, r.symbol, ratio, fac))
+    cols = ["filing_id", "isin", "symbol", "ratio", "scale_factor", "scope", "note"]
+    if not cands:
+        return pd.DataFrame(columns=cols)
+    top = _topline_per_month(con)
+    flagged = {c[0] for c in cands}
+    clean = top[~top.filing_id.isin(flagged)]
+    out = []
+    for fid, isin, sym, ratio, fac in cands:
+        mine = top[top.filing_id == fid]
+        scope, note = "paid_up", "unconfirmed: no top line to compare"
+        if len(mine):
+            t = mine.filing_period.iloc[0]
+            near = clean[(clean["isin"] == isin)
+                         & ((clean.filing_period - t).abs() <= pd.Timedelta(days=400))]
+            if len(near):
+                rr = mine.per_month.iloc[0] / near.per_month.median()
+                if CONFIRM_BAND[0] <= rr * fac <= CONFIRM_BAND[1]:
+                    scope, note = "all", f"confirmed: top line also off by ~{1 / fac:g}x"
+                elif CONFIRM_BAND[0] <= rr <= CONFIRM_BAND[1]:
+                    scope, note = "paid_up", "top line normal: only paid-up tag mistyped"
                 else:
-                    continue
-                break
-    return pd.DataFrame(out, columns=["filing_id", "isin", "symbol", "ratio", "scale_factor"])
+                    note = "unconfirmed: top line inconsistent with either reading"
+            else:
+                note = "unconfirmed: no nearby filings to compare"
+        out.append((fid, isin, sym, ratio, fac, scope, note))
+    return pd.DataFrame(out, columns=cols)
 
 
 def build_financials(con: duckdb.DuckDBPyConnection, mapping_path: Path) -> dict[str, int]:
     fixes = detect_scale_errors(con)
-    con.execute("UPDATE filings SET scale_factor = 1.0")
+    con.execute("UPDATE filings SET scale_factor = 1.0, scale_scope = 'all', scale_note = NULL")
     for r in fixes.itertuples(index=False):
-        con.execute("UPDATE filings SET scale_factor = ? WHERE filing_id = ?",
-                    [r.scale_factor, r.filing_id])
+        con.execute("UPDATE filings SET scale_factor = ?, scale_scope = ?, scale_note = ? "
+                    "WHERE filing_id = ?", [r.scale_factor, r.scope, r.note, r.filing_id])
     mapping = load_mapping(mapping_path)
     con.register("_map", mapping)
+    con.register("_pu", pd.DataFrame({"element": list(PAID_UP_ELEMENTS)}))
     facts = con.execute(
         """
         SELECT f.isin, f.symbol, f.basis, f.source, f.filed_at, f.filing_id,
                x.element, x.period_start, x.period_end, x.is_instant,
-               CASE WHEN x.unit = 'INR' THEN x.value * coalesce(f.scale_factor, 1.0)
+               CASE WHEN x.unit = 'INR' AND (coalesce(f.scale_scope, 'all') = 'all'
+                                             OR x.element IN (SELECT element FROM _pu))
+                    THEN x.value * coalesce(f.scale_factor, 1.0)
                     ELSE x.value END AS value,
                x.unit, m.field, m.rank
         FROM xbrl_facts x
@@ -110,6 +165,7 @@ def build_financials(con: duckdb.DuckDBPyConnection, mapping_path: Path) -> dict
         """
     ).df()
     con.unregister("_map")
+    con.unregister("_pu")
     con.execute("DELETE FROM financials")
     if facts.empty:
         return {"rows": 0, "restated": 0}
@@ -138,7 +194,8 @@ def build_financials(con: duckdb.DuckDBPyConnection, mapping_path: Path) -> dict
     con.execute(f"INSERT INTO financials ({cols}) SELECT {cols} FROM _fin")
     con.unregister("_fin")
     return {"rows": len(out), "restated": int(out.is_restated.sum()),
-            "scale_fixed_filings": len(fixes)}
+            "scale_fixed_filings": int((fixes.scope == "all").sum()) if len(fixes) else 0,
+            "paid_up_tag_fixes": int((fixes.scope == "paid_up").sum()) if len(fixes) else 0}
 
 
 def fundamentals(

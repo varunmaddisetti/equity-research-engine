@@ -322,6 +322,9 @@ def init_db(con: duckdb.DuckDBPyConnection) -> None:
         con.execute(stmt)
     # v5: multiplier applied to a filing's INR amounts when the filer used the wrong scale
     con.execute("ALTER TABLE filings ADD COLUMN IF NOT EXISTS scale_factor DOUBLE DEFAULT 1.0")
+    # v5: 'all' = every rupee amount rescaled; 'paid_up' = only the mistyped paid-up capital
+    con.execute("ALTER TABLE filings ADD COLUMN IF NOT EXISTS scale_scope VARCHAR DEFAULT 'all'")
+    con.execute("ALTER TABLE filings ADD COLUMN IF NOT EXISTS scale_note VARCHAR")
     con.execute(
         "INSERT OR REPLACE INTO meta VALUES ('schema_version', ?)", [str(SCHEMA_VERSION)]
     )
