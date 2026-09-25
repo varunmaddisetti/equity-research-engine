@@ -322,11 +322,14 @@ def ingest_xbrl_cmd(
     offline: bool = typer.Option(False, help="Parse cached files only"),
     retry_errors: bool = typer.Option(False, help="Also retry filings that failed before"),
     interval: float = typer.Option(1.0, help="Seconds between downloads (minimum 1.0)"),
+    reparse: bool = typer.Option(False, help="Re-read all cached files with the current parser "
+                                             "(offline; use after a parser fix)"),
 ) -> None:
     """Download and parse pending XBRL filings -> xbrl_facts. Resumable."""
     from ere.http import ExchangeClient
     from ere.ingest.xbrl import ingest_xbrl
 
+    offline = offline or reparse
     client = None if offline else ExchangeClient(min_interval_s=interval, prime_url=None)
     sym_list = [s.strip().upper() for s in symbols.split(",")] if symbols else None
     try:
@@ -336,7 +339,7 @@ def ingest_xbrl_cmd(
             with console.status(f"{n} filings pending") as st:
                 stats = ingest_xbrl(
                     con, RAW_DIR, client=client, offline=offline, symbols=sym_list,
-                    retry_errors=retry_errors,
+                    retry_errors=retry_errors, reparse=reparse,
                     on_progress=lambda s, msg: st.update(f"{s}: {msg}"))
             errors = con.execute(
                 "SELECT split_part(message, ':', 1) || ': ' || split_part(message, ':', 2) AS "
@@ -360,7 +363,8 @@ def ingest_financials(
 ) -> None:
     """All of M2 in one go: filings index, XBRL download/parse, build financials."""
     ingest_filings_cmd(symbols=symbols, offline=False)
-    ingest_xbrl_cmd(symbols=symbols, offline=False, retry_errors=False, interval=0.5)
+    ingest_xbrl_cmd(symbols=symbols, offline=False, retry_errors=False, interval=1.0,
+                    reparse=False)
     build_financials_cmd()
 
 
@@ -527,7 +531,7 @@ def refresh(
         steps += [
             ("filing index", lambda: ingest_filings_cmd(symbols=None, offline=False), False),
             ("xbrl", lambda: ingest_xbrl_cmd(symbols=None, offline=False, retry_errors=False,
-                                             interval=0.5), False),
+                                             interval=0.5, reparse=False), False),
             ("shareholding", lambda: ingest_shareholding(symbols=None, offline=False), False),
         ]
     steps += [

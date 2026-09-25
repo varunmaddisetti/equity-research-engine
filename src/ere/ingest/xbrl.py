@@ -17,7 +17,7 @@ from __future__ import annotations
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import duckdb
@@ -63,9 +63,50 @@ def parse_contexts(root: ET.Element) -> dict[str, tuple[date, date, bool]]:
     return out
 
 
+# Older filings (2018 taxonomy, roughly 2018-2020) reference the headline contexts OneD /
+# FourD / OneI without ever declaring them - only the dimensional breakdown contexts are in
+# the file. Their periods are recoverable from the document's own date facts. Only the
+# unambiguous conventional ids are inferred; anything else undeclared is still skipped.
+#   OneD  current quarter: DateOfStartOfReportingPeriod .. DateOfEndOfReportingPeriod
+#   FourD year to date:    DateOfStartOfFinancialYear  .. DateOfEndOfReportingPeriod
+#   OneI  balance sheet at DateOfEndOfReportingPeriod
+#   PY_I  balance sheet at the previous year end (day before DateOfStartOfFinancialYear)
+_DATE_FACTS = ("DateOfStartOfReportingPeriod", "DateOfEndOfReportingPeriod",
+               "DateOfStartOfFinancialYear")
+
+
+def infer_missing_contexts(root: ET.Element, declared: dict) -> dict:
+    dates: dict[str, date] = {}
+    for el in root:
+        name = _local(el.tag)
+        if name in _DATE_FACTS and name not in dates:
+            d = _date(el.text)
+            if d:
+                dates[name] = d
+    start_rp = dates.get("DateOfStartOfReportingPeriod")
+    end_rp = dates.get("DateOfEndOfReportingPeriod")
+    start_fy = dates.get("DateOfStartOfFinancialYear")
+    out = {}
+    if start_rp and end_rp and "OneD" not in declared:
+        out["OneD"] = (start_rp, end_rp, False)
+    if start_fy and end_rp and "FourD" not in declared and start_fy <= end_rp:
+        out["FourD"] = (start_fy, end_rp, False)
+    if end_rp and "OneI" not in declared:
+        out["OneI"] = (end_rp, end_rp, True)
+    if start_fy and "PY_I" not in declared:
+        prev = start_fy - timedelta(days=1)
+        out["PY_I"] = (prev, prev, True)
+    return out
+
+
 def parse_xbrl(body: bytes, filing_id: str) -> pd.DataFrame:
     root = ET.fromstring(body)
     contexts = parse_contexts(root)
+    # Referenced-but-undeclared headline contexts (older filings): infer from document dates.
+    referenced = {el.get("contextRef") for el in root if el.get("unitRef") is not None}
+    if referenced - set(contexts):
+        contexts.update({k: v for k, v in infer_missing_contexts(root, contexts).items()
+                         if k in referenced})
     rows = []
     for el in root:
         ctx = el.get("contextRef")
@@ -105,6 +146,7 @@ def ingest_xbrl(
     retry_errors: bool = False,
     on_progress: Callable[[str, str], None] | None = None,
     cooldown_s: float = COOLDOWN_S,
+    reparse: bool = False,
 ) -> dict[str, int]:
     """Download and parse every pending filing. Resumable; raw files cached.
 
@@ -115,6 +157,9 @@ def ingest_xbrl(
     the command later carries on from where it stopped.
     """
     statuses = ["pending"] + (["error", "missing"] if retry_errors else [])
+    if reparse:  # re-read every cached file with the current parser (no network)
+        statuses = ["pending", "parsed", "error"]
+        offline = True
     q = ("SELECT filing_id, symbol, period_end, xbrl_url FROM filings WHERE status IN ("
          + ",".join("?" * len(statuses)) + ")")
     params: list = list(statuses)

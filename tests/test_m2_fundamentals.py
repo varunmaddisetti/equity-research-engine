@@ -206,3 +206,54 @@ def test_cli_offline_financials(con, tmp_path, monkeypatch):
     assert (tmp_path / "processed" / "fin_coverage.csv").exists()
     cov = pd.read_csv(tmp_path / "processed" / "fin_coverage.csv").set_index("symbol")
     assert cov.loc["TESTCO", "quarters"] == 4 and cov.loc["TESTCO", "fy_years"] == 1
+
+
+# ------------------------------------------------------------------ 2018-taxonomy filings
+def _old_format_filing() -> bytes:
+    """Modelled on ASTERDM's Q4 FY19 filing (2018 taxonomy): the 38 declared contexts are all
+    dimensional breakdowns; OneD / FourD / OneI are referenced but never declared."""
+    ns = ('xmlns:in-bse-fin="http://www.bseindia.com/xbrl/fin/2018-03-31/in-bse-fin" '
+          'xmlns:xbrli="http://www.xbrl.org/2003/instance" '
+          'xmlns:xbrldi="http://xbrl.org/2006/xbrldi"')
+    dim_ctx = ('<xbrli:context id="OneOperatingExpenses01D"><xbrli:entity><xbrli:identifier '
+               'scheme="x">ASTERDM</xbrli:identifier></xbrli:entity><xbrli:period>'
+               '<xbrli:startDate>2019-01-01</xbrli:startDate><xbrli:endDate>2019-03-31'
+               '</xbrli:endDate></xbrli:period><xbrli:scenario><xbrldi:explicitMember '
+               'dimension="in-bse-fin:DetailsOfOtherExpensesAxis">in-bse-fin:M1'
+               '</xbrldi:explicitMember></xbrli:scenario></xbrli:context>')
+    units = '<xbrli:unit id="INR"><xbrli:measure>iso4217:INR</xbrli:measure></xbrli:unit>'
+    facts = (
+        '<in-bse-fin:DateOfStartOfFinancialYear contextRef="OneD">2018-04-01'
+        '</in-bse-fin:DateOfStartOfFinancialYear>'
+        '<in-bse-fin:DateOfStartOfReportingPeriod contextRef="OneD">2019-01-01'
+        '</in-bse-fin:DateOfStartOfReportingPeriod>'
+        '<in-bse-fin:DateOfEndOfReportingPeriod contextRef="OneD">2019-03-31'
+        '</in-bse-fin:DateOfEndOfReportingPeriod>'
+        '<in-bse-fin:RevenueFromOperations contextRef="OneD" unitRef="INR" decimals="-7">'
+        '22010300000.00</in-bse-fin:RevenueFromOperations>'
+        '<in-bse-fin:RevenueFromOperations contextRef="FourD" unitRef="INR" decimals="-7">'
+        '79627100000.00</in-bse-fin:RevenueFromOperations>'
+        '<in-bse-fin:Assets contextRef="OneI" unitRef="INR">90000000000</in-bse-fin:Assets>'
+        '<in-bse-fin:OtherExpenses contextRef="OneOperatingExpenses01D" unitRef="INR">5'
+        '</in-bse-fin:OtherExpenses>'
+        '<in-bse-fin:SomethingElse contextRef="SevenD" unitRef="INR">1</in-bse-fin:SomethingElse>'
+    )
+    return (f'<?xml version="1.0"?><xbrli:xbrl {ns}>{dim_ctx}{units}{facts}'
+            '</xbrli:xbrl>').encode()
+
+
+def test_old_format_undeclared_headline_contexts_are_inferred():
+    df = parse_xbrl(_old_format_filing(), "old")
+    rev = df[df.element == "RevenueFromOperations"].set_index("period_start")
+    assert rev.loc[date(2019, 1, 1), "value"] == 22010300000.0          # OneD = Q4
+    assert rev.loc[date(2018, 4, 1), "value"] == 79627100000.0          # FourD = FY19
+    assert rev.loc[date(2018, 4, 1), "period_end"] == date(2019, 3, 31)
+    a = df[df.element == "Assets"].iloc[0]
+    assert a.is_instant and a.period_end == date(2019, 3, 31)            # OneI
+    assert "OtherExpenses" not in set(df.element)                        # breakdown skipped
+    assert "SomethingElse" not in set(df.element)                        # unknown id skipped
+
+
+def test_declared_contexts_are_never_overridden():
+    df = parse_xbrl(legacy_quarter("2024-10-01", "2024-12-31", "2024-04-01", 120, 330), "f")
+    assert set(df.period_start) == {date(2024, 10, 1), date(2024, 4, 1)}
