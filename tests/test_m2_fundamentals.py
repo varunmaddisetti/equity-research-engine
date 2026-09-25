@@ -1,5 +1,6 @@
 from datetime import date
 
+import numpy as np
 import pandas as pd
 import pytest
 from fixtures_xbrl import (
@@ -272,3 +273,53 @@ def test_insurance_fields_mapped():
     m = load_mapping(MAPPING)
     assert {"premium_earned", "combined_ratio", "solvency_ratio"} <= set(m.field)
     assert "ProfitLossAfterTax" in set(m[m.field == "pat"].element)
+
+
+# ------------------------------------------------------------------ unit-scale errors
+def test_misscaled_filing_detected_and_corrected(con):
+    """IRCON Q4 FY22: every amount tagged at 1/100 of its rupee value."""
+    from ere.clean.financials import detect_scale_errors
+
+    # TESTCO has 5 filings with paid-up capital 50 cr; make the Q2 filing 1/100 of that
+    con.execute("UPDATE xbrl_facts SET value = value / 100 WHERE filing_id = 'INDAS_2_Q2_C.xml' "
+                "AND unit = 'INR'")
+    fixes = detect_scale_errors(con)
+    assert list(fixes.filing_id) == ["INDAS_2_Q2_C.xml"]
+    assert fixes.scale_factor.iloc[0] == 100
+    stats = build_financials(con, MAPPING)
+    assert stats["scale_fixed_filings"] == 1
+    w = fundamentals(con, ("Q",), isins=[T_ISIN]).set_index("period_end")
+    assert w.loc[pd.Timestamp("2024-09-30"), "revenue"] == pytest.approx(110 * CR)
+    eps = con.execute("SELECT value FROM financials WHERE filing_id = 'INDAS_2_Q2_C.xml' "
+                      "AND field = 'eps_basic' AND period_type = 'Q'").fetchone()[0]
+    assert eps == pytest.approx(1.5)          # per-share values are never rescaled
+
+
+def test_bonus_doubling_is_not_a_scale_error(con):
+    from ere.clean.financials import detect_scale_errors
+
+    con.execute("UPDATE xbrl_facts SET value = value * 2 WHERE filing_id = 'INDAS_3_Q3_C.xml' "
+                "AND element = 'PaidUpValueOfEquityShareCapital'")
+    assert detect_scale_errors(con).empty
+
+
+def test_pat_check_allows_regulatory_deferral_and_associates():
+    w = pd.DataFrame({"symbol": ["U"] * 2, "isin": ["I"] * 2, "basis": ["consolidated"] * 2,
+                      "period_type": ["Q", "Q"],
+                      "period_end": pd.to_datetime(["2019-06-30", "2019-09-30"]),
+                      "pbt": [150.0, 150.0], "tax": [30.0, 30.0],
+                      "pat_continuing": [216.0, 130.0],
+                      "regulatory_deferral_movement": [96.0, 0.0],
+                      "associates_share": [0.0, 10.0]})
+    assert identity_failures(w).empty
+
+
+def test_quarters_gap_explained_by_discontinued_operations():
+    q_ends = pd.to_datetime(["2019-06-30", "2019-09-30", "2019-12-31", "2020-03-31"])
+    w = pd.DataFrame({
+        "symbol": "T", "isin": "I", "basis": "consolidated",
+        "period_type": ["Q"] * 4 + ["FY"], "period_end": list(q_ends) + [q_ends[-1]],
+        "revenue": [30.0, 30.0, 30.0, 20.0, 80.0],     # year restated without a sold unit
+        "pat_discontinued": [np.nan] * 4 + [12.0]})
+    f = identity_failures(w)
+    assert list(f.check) == ["quarters_sum"] and f.explanation.iloc[0] == "discontinued_operations"

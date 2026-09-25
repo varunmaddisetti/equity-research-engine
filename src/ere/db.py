@@ -19,7 +19,7 @@ import duckdb
 
 from ere.paths import DB_PATH
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Tables whose definition changed in v2. No v1 release ever wrote rows to them (ingest was
 # not implemented in v1), so dropping them on upgrade loses nothing.
@@ -320,6 +320,8 @@ def init_db(con: duckdb.DuckDBPyConnection) -> None:
         con.execute('DROP TABLE IF EXISTS "financials"')
     for stmt in DDL:
         con.execute(stmt)
+    # v5: multiplier applied to a filing's INR amounts when the filer used the wrong scale
+    con.execute("ALTER TABLE filings ADD COLUMN IF NOT EXISTS scale_factor DOUBLE DEFAULT 1.0")
     con.execute(
         "INSERT OR REPLACE INTO meta VALUES ('schema_version', ?)", [str(SCHEMA_VERSION)]
     )

@@ -32,44 +32,68 @@ def _rel_gap(a: pd.Series, b: pd.Series) -> pd.Series:
 
 
 def identity_failures(wide: pd.DataFrame) -> pd.DataFrame:
+    """Rows where the filer's own numbers do not reconcile. `explanation` is filled when a
+    known, legitimate cause accounts for the gap (then it is not counted as a failure):
+      discontinued_operations  a business sold or demerged during the year: quarters filed
+                               earlier include it, the year-end figures are restated without it
+    """
     rows = []
 
-    def check(name, mask, lhs, rhs, tol):
-        ok = mask & lhs.notna() & rhs.notna()
-        gap = _rel_gap(lhs, rhs)
-        bad = wide[ok & (gap > tol)]
-        for i, r in bad.iterrows():
-            rows.append((r.symbol, r.period_end, r.period_type, r.basis, name,
-                         float(lhs[i]), float(rhs[i]), float(gap[i])))
+    def col(c):
+        return wide[c] if c in wide else pd.Series(np.nan, index=wide.index)
 
-    col = lambda c: wide[c] if c in wide else pd.Series(np.nan, index=wide.index)  # noqa: E731
+    def add(i, r, name, lhs, rhs, gap, why=""):
+        rows.append((r.symbol, r.period_end, r.period_type, r.basis, name, float(lhs),
+                     float(rhs), float(gap), why))
+
     flows = wide.period_type.isin(["Q", "FY"])
     non_bank = col("interest_earned").isna()
-    check("income_sum", flows & non_bank, col("total_income"),
-          col("revenue") + col("other_income").fillna(0), 0.01)
-    check("pat_from_pbt", flows, col("pat_continuing"), col("pbt") - col("tax"), 0.01)
-    check("balance_sheet", wide.period_type == "BS", col("total_assets"),
-          col("equity_and_liabilities"), 0.005)
 
-    q = wide[wide.period_type == "Q"][["isin", "period_end", "basis", "revenue"]].dropna() \
-        if "revenue" in wide else pd.DataFrame(columns=["isin", "period_end", "basis", "revenue"])
+    # total income = revenue + other income
+    lhs, rhs = col("total_income"), col("revenue") + col("other_income").fillna(0)
+    gap = _rel_gap(lhs, rhs)
+    for i in wide.index[flows & non_bank & lhs.notna() & rhs.notna() & (gap > 0.01)]:
+        add(i, wide.loc[i], "income_sum", lhs[i], rhs[i], gap[i])
+
+    # PAT from continuing operations = PBT - tax (+ regulatory deferral movement for
+    # utilities, + associates' share when presented after tax). Pass if any variant holds.
+    pat, base = col("pat_continuing"), col("pbt") - col("tax")
+    rdm, assoc = col("regulatory_deferral_movement").fillna(0), col("associates_share").fillna(0)
+    ok = pat.notna() & base.notna()
+    for i in wide.index[flows & ok]:
+        variants = [base[i], base[i] + rdm[i], base[i] + assoc[i], base[i] + rdm[i] + assoc[i]]
+        gaps = [abs(pat[i] - v) / max(abs(v), 1.0) for v in variants]
+        if min(gaps) > 0.01:
+            add(i, wide.loc[i], "pat_from_pbt", pat[i], base[i], gaps[0])
+
+    # balance sheet balances
+    lhs, rhs = col("total_assets"), col("equity_and_liabilities")
+    gap = _rel_gap(lhs, rhs)
+    for i in wide.index[(wide.period_type == "BS") & lhs.notna() & rhs.notna() & (gap > 0.005)]:
+        add(i, wide.loc[i], "balance_sheet", lhs[i], rhs[i], gap[i])
+
+    # four quarters = fiscal year (same basis only; pre-FY20 quarters are often standalone)
+    q = wide[wide.period_type == "Q"]
     fy = wide[wide.period_type == "FY"]
-    for _, r in fy.iterrows():
-        if pd.isna(r.get("revenue")):
-            continue
-        start = r.period_end - pd.DateOffset(years=1)
-        qs = q[(q["isin"] == r["isin"]) & (q.period_end > start)
-               & (q.period_end <= r.period_end)]
-        # Only compare like with like: pre-FY20 quarters are often standalone-only while the
-        # year is consolidated.
-        if len(qs) == 4 and set(qs["basis"]) == {r["basis"]}:
+    if "revenue" in wide:
+        for i, r in fy.iterrows():
+            if pd.isna(r.get("revenue")):
+                continue
+            start = r.period_end - pd.DateOffset(years=1)
+            qs = q[(q["isin"] == r["isin"]) & (q.period_end > start)
+                   & (q.period_end <= r.period_end) & q.revenue.notna()]
+            if len(qs) != 4 or set(qs["basis"]) != {r["basis"]}:
+                continue
             s = qs.revenue.sum()
             gap = abs(s - r.revenue) / max(abs(r.revenue), 1.0)
             if gap > 0.02:
-                rows.append((r.symbol, r.period_end, "FY", r.basis, "quarters_sum",
-                             float(s), float(r.revenue), float(gap)))
+                disc = [r.get("pat_discontinued", np.nan)] + list(
+                    qs.get("pat_discontinued", pd.Series(dtype=float)))
+                why = ("discontinued_operations"
+                       if any(pd.notna(x) and abs(x) > 0 for x in disc) else "")
+                add(i, r, "quarters_sum", s, r.revenue, gap, why)
     return pd.DataFrame(rows, columns=["symbol", "period_end", "period_type", "basis", "check",
-                                       "lhs", "rhs", "rel_gap"])
+                                       "lhs", "rhs", "rel_gap", "explanation"])
 
 
 def coverage(con: duckdb.DuckDBPyConnection, wide: pd.DataFrame) -> pd.DataFrame:

@@ -48,14 +48,62 @@ def classify_period(start: pd.Series, end: pd.Series, instant: pd.Series) -> pd.
     return out
 
 
+PAID_UP_ELEMENTS = ("PaidUpValueOfEquityShareCapital", "PaidUpEquityCapital", "Capital",
+                    "ShareCapital")
+SCALE_POWERS = (2, 3, 5, 7)      # x100 (lakh vs crore mix-ups), x1000, x1 lakh, x1 crore
+SCALE_BAND = (0.5, 2.0)
+MIN_FILINGS_FOR_SCALE = 4
+
+
+def detect_scale_errors(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Find filings whose rupee amounts are off by a power of ten.
+
+    Real case (IRCON Q4 FY22): the document says "Lakhs" but amounts were tagged at 1/100 of
+    their rupee value, so FY revenue read Rs 74 cr instead of Rs 7,380 cr. The detector uses
+    paid-up share capital, which never moves by 100x or 1,000x (a bonus at most doubles it,
+    splits leave it unchanged), so a genuine collapse in revenue can never trigger it.
+    Returns filing_id, isin, symbol, ratio, scale_factor for flagged filings.
+    """
+    pu = con.execute(
+        "SELECT f.filing_id, f.isin, f.symbol, max(x.value) AS paid_up FROM xbrl_facts x "
+        "JOIN filings f USING (filing_id) WHERE x.element IN ("
+        + ",".join("?" * len(PAID_UP_ELEMENTS)) + ") AND x.unit = 'INR' AND x.value > 0 "
+        "GROUP BY 1, 2, 3", list(PAID_UP_ELEMENTS)).df()
+    out = []
+    for isin, g in pu.groupby("isin"):
+        if len(g) < MIN_FILINGS_FOR_SCALE:
+            continue
+        ref = g["paid_up"].median()
+        for r in g.itertuples(index=False):
+            ratio = r.paid_up / ref
+            if 1 / 20 < ratio < 20:
+                continue
+            for k in SCALE_POWERS:
+                for f in (10.0 ** k, 10.0 ** -k):
+                    if SCALE_BAND[0] <= ratio * f <= SCALE_BAND[1]:
+                        out.append((r.filing_id, isin, r.symbol, ratio, f))
+                        break
+                else:
+                    continue
+                break
+    return pd.DataFrame(out, columns=["filing_id", "isin", "symbol", "ratio", "scale_factor"])
+
+
 def build_financials(con: duckdb.DuckDBPyConnection, mapping_path: Path) -> dict[str, int]:
+    fixes = detect_scale_errors(con)
+    con.execute("UPDATE filings SET scale_factor = 1.0")
+    for r in fixes.itertuples(index=False):
+        con.execute("UPDATE filings SET scale_factor = ? WHERE filing_id = ?",
+                    [r.scale_factor, r.filing_id])
     mapping = load_mapping(mapping_path)
     con.register("_map", mapping)
     facts = con.execute(
         """
         SELECT f.isin, f.symbol, f.basis, f.source, f.filed_at, f.filing_id,
-               x.element, x.period_start, x.period_end, x.is_instant, x.value, x.unit,
-               m.field, m.rank
+               x.element, x.period_start, x.period_end, x.is_instant,
+               CASE WHEN x.unit = 'INR' THEN x.value * coalesce(f.scale_factor, 1.0)
+                    ELSE x.value END AS value,
+               x.unit, m.field, m.rank
         FROM xbrl_facts x
         JOIN filings f USING (filing_id)
         JOIN _map m USING (element)
@@ -89,7 +137,8 @@ def build_financials(con: duckdb.DuckDBPyConnection, mapping_path: Path) -> dict
     cols = ", ".join(out.columns)
     con.execute(f"INSERT INTO financials ({cols}) SELECT {cols} FROM _fin")
     con.unregister("_fin")
-    return {"rows": len(out), "restated": int(out.is_restated.sum())}
+    return {"rows": len(out), "restated": int(out.is_restated.sum()),
+            "scale_fixed_filings": len(fixes)}
 
 
 def fundamentals(

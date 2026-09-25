@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
+import numpy as np
 import pandas as pd
 import typer
 from rich.console import Console
@@ -640,15 +641,25 @@ def check_financials() -> None:
 
     console.print("[bold]Weakest coverage[/] (fy_years / quarters with top line and PAT)")
     console.print(cov.head(15).to_string(index=False))
+    unexplained = fails[fails.explanation == ""] if len(fails) else fails
     if len(fails):
-        console.print("\n[bold]Identity check failures[/]")
-        console.print(fails.groupby("check").size().rename("n").to_string())
+        console.print("\n[bold]Identity checks[/] (explained = legitimate cause identified)")
+        summary = fails.assign(status=np.where(fails.explanation == "", "unexplained",
+                                               "explained: " + fails.explanation))
+        console.print(summary.groupby(["check", "status"]).size().rename("n").to_string())
+    with connect(read_only=True) as con:
+        scaled = con.execute("SELECT symbol, period_end, basis, scale_factor, filing_id FROM "
+                             "filings WHERE scale_factor <> 1 ORDER BY symbol, period_end").df()
+    if len(scaled):
+        console.print("\n[bold]Filings with the wrong unit scale, corrected[/] "
+                      "(detected from paid-up capital)")
+        console.print(scaled.to_string(index=False))
     console.print("\n[bold]Most frequent unmapped elements[/]")
     console.print(unmapped.head(15).to_string(index=False))
     console.print(
         f"\n{len(cov)} stocks | with >= 5 FY: {(cov.fy_years >= 5).sum()} | "
         f"no filings: {(cov.filings == 0).sum()} | failed downloads/parses: {cov.failed.sum()} | "
-        f"identity failures: {len(fails)}")
+        f"unexplained identity failures: {len(unexplained)}")
     console.print(f"Full tables in {PROCESSED_DIR}: fin_coverage.csv, fin_identity_failures.csv, "
                   "xbrl_unmapped_elements.csv, fundamentals_wide.csv")
 

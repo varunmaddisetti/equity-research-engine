@@ -18,7 +18,7 @@ def test_init_db_is_idempotent(tmp_path: Path):
         init_db(con)
         init_db(con)
         assert set(list_tables(con)) == EXPECTED
-        assert con.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == "4"
+        assert con.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == "5"
 
 
 def test_financials_primary_key_keeps_restatements(tmp_path: Path):

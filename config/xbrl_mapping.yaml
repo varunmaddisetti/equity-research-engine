@@ -34,6 +34,9 @@ income_statement:
   pat_owners:         [ProfitOrLossAttributableToOwnersOfParent,
                        ProfitLossAfterTaxesMinorityInterestAndShareOfProfitLossOfAssociates]
   minority_share:     [ProfitOrLossAttributableToNonControllingInterests]
+  pat_discontinued:   [ProfitLossFromDiscontinuedOperationsAfterTax]
+  regulatory_deferral_movement:
+    [NetMovementInRegulatoryDeferralAccountBalancesRelatedToProfitOrLossAndTheRelatedDeferredTaxMovement]
   eps_basic:          [BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations,
                        BasicAndDilutedEPSBeforeExtraordinaryItemsNetOfTaxExpenseForThePeriodNotToBeAnnualized,
                        BasicEarningsLossPerShareFromContinuingOperations,
