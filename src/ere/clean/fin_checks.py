@@ -51,8 +51,8 @@ def identity_failures(wide: pd.DataFrame) -> pd.DataFrame:
     check("balance_sheet", wide.period_type == "BS", col("total_assets"),
           col("equity_and_liabilities"), 0.005)
 
-    q = wide[wide.period_type == "Q"][["isin", "period_end", "revenue"]].dropna() \
-        if "revenue" in wide else pd.DataFrame(columns=["isin", "period_end", "revenue"])
+    q = wide[wide.period_type == "Q"][["isin", "period_end", "basis", "revenue"]].dropna() \
+        if "revenue" in wide else pd.DataFrame(columns=["isin", "period_end", "basis", "revenue"])
     fy = wide[wide.period_type == "FY"]
     for _, r in fy.iterrows():
         if pd.isna(r.get("revenue")):
@@ -60,7 +60,9 @@ def identity_failures(wide: pd.DataFrame) -> pd.DataFrame:
         start = r.period_end - pd.DateOffset(years=1)
         qs = q[(q["isin"] == r["isin"]) & (q.period_end > start)
                & (q.period_end <= r.period_end)]
-        if len(qs) == 4:
+        # Only compare like with like: pre-FY20 quarters are often standalone-only while the
+        # year is consolidated.
+        if len(qs) == 4 and set(qs["basis"]) == {r["basis"]}:
             s = qs.revenue.sum()
             gap = abs(s - r.revenue) / max(abs(r.revenue), 1.0)
             if gap > 0.02:
@@ -89,8 +91,9 @@ def coverage(con: duckdb.DuckDBPyConnection, wide: pd.DataFrame) -> pd.DataFrame
         return filings
     top = wide.copy()
     top["top_line"] = top.get("revenue", np.nan)
-    if "interest_earned" in top:
-        top["top_line"] = top["top_line"].fillna(top["interest_earned"])
+    for alt in ("interest_earned", "premium_earned"):
+        if alt in top:
+            top["top_line"] = top["top_line"].fillna(top[alt])
     has = top[top.top_line.notna() & top.get("pat", pd.Series(np.nan, index=top.index)).notna()]
     fy = has[has.period_type == "FY"].groupby("symbol").size().rename("fy_years")
     qs = has[has.period_type == "Q"].groupby("symbol").size().rename("quarters")

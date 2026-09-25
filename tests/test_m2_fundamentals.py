@@ -257,3 +257,18 @@ def test_old_format_undeclared_headline_contexts_are_inferred():
 def test_declared_contexts_are_never_overridden():
     df = parse_xbrl(legacy_quarter("2024-10-01", "2024-12-31", "2024-04-01", 120, 330), "f")
     assert set(df.period_start) == {date(2024, 10, 1), date(2024, 4, 1)}
+
+
+def test_quarters_sum_skips_mixed_basis(con):
+    w = fundamentals(con)
+    # pretend the June quarter was only filed standalone (pre-FY20 practice) with other numbers
+    m = (w.period_type == "Q") & (w.period_end == pd.Timestamp("2024-06-30"))
+    w.loc[m, "basis"] = "standalone"
+    w.loc[m, "revenue"] *= 0.7
+    assert "quarters_sum" not in set(identity_failures(w).check)
+
+
+def test_insurance_fields_mapped():
+    m = load_mapping(MAPPING)
+    assert {"premium_earned", "combined_ratio", "solvency_ratio"} <= set(m.field)
+    assert "ProfitLossAfterTax" in set(m[m.field == "pat"].element)

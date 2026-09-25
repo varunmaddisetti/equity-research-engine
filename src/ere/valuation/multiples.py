@@ -28,7 +28,8 @@ MIN_POINTS = 12
 def _ttm(q: pd.DataFrame, fy: pd.DataFrame, col: str) -> float:
     q = q.sort_values("period_end").tail(4)
     if (len(q) == 4 and col in q and q[col].notna().all()
-            and q.period_end.diff().dt.days.dropna().between(80, 100).all()):
+            and q.period_end.diff().dt.days.dropna().between(80, 100).all()
+            and ("basis" not in q or q["basis"].nunique() == 1)):
         return float(q[col].sum())
     if len(fy) and col in fy and pd.notna(fy.iloc[-1][col]):
         return float(fy.iloc[-1][col])

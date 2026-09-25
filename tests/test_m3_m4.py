@@ -213,3 +213,10 @@ def test_cli_show(con, tmp_path, monkeypatch):
     res = CliRunner().invoke(cli.app, ["show", "ALPHA"])
     assert res.exit_code == 0, res.output
     assert "Quality flags" in res.output and "Valuation ranges" in res.output
+
+
+def test_ttm_refuses_to_mix_standalone_and_consolidated_quarters():
+    q = pd.DataFrame({"period_end": pd.to_datetime(["2018-06-30", "2018-09-30", "2018-12-31",
+                                                     "2019-03-31"]), "revenue": [1, 2, 3, 4],
+                      "basis": ["standalone"] * 3 + ["consolidated"]})
+    assert ttm(q) == ({}, None)

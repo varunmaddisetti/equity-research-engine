@@ -20,7 +20,8 @@ import pandas as pd
 
 FLOW_FIELDS = ["revenue", "ebitda", "pat", "pat_owners", "finance_cost", "depreciation",
                "other_income", "pbt", "interest_earned", "interest_expended", "nii",
-               "provisions", "operating_expenses", "interest_income"]
+               "provisions", "operating_expenses", "interest_income", "premium_earned",
+               "gross_premium"]
 
 
 def _g(row, col):
@@ -52,6 +53,10 @@ def ttm(q: pd.DataFrame) -> tuple[dict[str, float], pd.Timestamp | None]:
         return {}, None
     gaps = q.period_end.diff().dt.days.dropna()
     if not gaps.between(80, 100).all():
+        return {}, None
+    # Before FY20 many companies filed quarterly results standalone only; never add up a mix
+    # of standalone and consolidated quarters.
+    if "basis" in q and q["basis"].nunique() > 1:
         return {}, None
     out = {}
     for f in FLOW_FIELDS:

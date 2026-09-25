@@ -25,21 +25,23 @@ income_statement:
   other_expenses:     [OtherExpenses]
   total_expenses:     [Expenses]
   exceptional_items:  [ExceptionalItemsBeforeTax, ExceptionalItems]
-  pbt:                [ProfitBeforeTax, ProfitLossFromOrdinaryActivitiesBeforeTax]
-  tax:                [TaxExpense]
+  pbt:                [ProfitBeforeTax, ProfitLossFromOrdinaryActivitiesBeforeTax,
+                       ProfitOrLossBeforeTax]
+  tax:                [TaxExpense, ProvisionForTax]
   pat_continuing:     [ProfitLossForPeriodFromContinuingOperations, ProfitLossFromOrdinaryActivitiesAfterTax]
   associates_share:   [ShareOfProfitLossOfAssociatesAndJointVenturesAccountedForUsingEquityMethod]
-  pat:                [ProfitLossForPeriod, ProfitLossForThePeriod]
+  pat:                [ProfitLossForPeriod, ProfitLossForThePeriod, ProfitLossAfterTax]
   pat_owners:         [ProfitOrLossAttributableToOwnersOfParent,
                        ProfitLossAfterTaxesMinorityInterestAndShareOfProfitLossOfAssociates]
   minority_share:     [ProfitOrLossAttributableToNonControllingInterests]
   eps_basic:          [BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations,
+                       BasicAndDilutedEPSBeforeExtraordinaryItemsNetOfTaxExpenseForThePeriodNotToBeAnnualized,
                        BasicEarningsLossPerShareFromContinuingOperations,
                        BasicEarningsPerShareAfterExtraordinaryItems]
   eps_diluted:        [DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations,
                        DilutedEarningsLossPerShareFromContinuingOperations,
                        DilutedEarningsPerShareAfterExtraordinaryItems]
-  paid_up_capital:    [PaidUpValueOfEquityShareCapital]
+  paid_up_capital:    [PaidUpValueOfEquityShareCapital, PaidUpEquityCapital]
   face_value:         [FaceValueOfEquityShareCapital]
 
 banking:
@@ -60,7 +62,7 @@ banking:
   deposits:           [Deposits]
   investments:        [Investments]
   bank_borrowings:    [Borrowings]
-  capital:            [Capital]
+  capital:            [Capital, ShareCapital]
   reserves:           [ReservesAndSurplus]
   cash_with_rbi:      [CashAndBalancesWithReserveBankOfIndia]
   balances_with_banks: [BalancesWithBanksAndMoneyAtCallAndShortNotice]
@@ -109,3 +111,19 @@ nbfc:
   debt_securities:    [DebtSecurities]
   borrowings_other_than_debt_securities: [BorrowingsOtherThanDebtSecurities]
   subordinated_liabilities: [SubordinatedLiabilities]
+
+# General insurers (IRDAI format, "INTEGRATED_FILING_GI_*" files). Names read from STARHEALTH's
+# FY26 filing (Sept 2026); results filings before 2025 had no XBRL for this insurer.
+insurance:
+  gross_premium:      [GrossPremiumsWritten]
+  net_premium_written: [NetPremiumWritten]
+  premium_earned:     [PremiumEarned]
+  incurred_claims:    [IncurredClaims]
+  net_commission:     [NetCommission, CommissionsAndBrokerageNet]
+  underwriting_profit: [UnderwritingProfitOrLoss]
+  insurance_operating_profit: [OperatingProfitOrLoss]
+  investment_income:  [IncomeFromInvestmentsNet]
+  solvency_ratio:     [SolvencyRatio]
+  combined_ratio:     [CombinedRatio]
+  incurred_claim_ratio: [IncurredClaimRatio]
+  expense_of_management_ratio: [ExpensesOfManagementRatio]

@@ -88,12 +88,20 @@ def q_label(ts: pd.Timestamp) -> str:
 
 
 # ------------------------------------------------------------------ sections
-def _fy_tables(w: pd.DataFrame, lender: bool):
+def _fy_tables(w: pd.DataFrame, lender: bool, insurer: bool = False):
     fy = w[w.period_type == "FY"].sort_values("period_end").tail(6)
     bs = w[w.period_type == "BS"].sort_values("period_end")
     cols = [fy_label(p) for p in fy.period_end]
     g = lambda r, c: r[c] if c in r and pd.notna(r[c]) else np.nan  # noqa: E731
-    if lender:
+    if insurer:
+        spec = [("Gross premium written", "gross_premium", cr),
+                ("Net premium earned", "premium_earned", cr),
+                ("Incurred claims", "incurred_claims", cr),
+                ("Underwriting profit", "underwriting_profit", cr),
+                ("Investment income", "investment_income", cr), ("PAT", "pat", cr),
+                ("Combined ratio %", "combined_ratio", pp), ("Solvency ratio", "solvency_ratio",
+                                                              lambda v: num(v, 2))]
+    elif lender:
         spec = [("Interest earned", "interest_earned", cr), ("Net interest income", "nii", cr),
                 ("Operating profit (pre-provision)", "operating_profit_pre_provision", cr),
                 ("Provisions", "provisions", cr), ("PAT", "pat", cr),
@@ -145,12 +153,13 @@ def _fy_tables(w: pd.DataFrame, lender: bool):
         series["ROCE"] = pd.Series(roce_s).rename(index=fy_idx)
     ratio_chart = (charts.line_chart(series, "Return ratios by fiscal year", charts.pct1_fmt,
                                      categorical=True) if len(fy) >= 2 else None)
-    top = "nii" if lender else "revenue"
+    top = "premium_earned" if insurer else ("nii" if lender else "revenue")
     rev_chart = None
     if len(fy) >= 2 and top in fy:
         vals = [g(r, top) / CRORE for _, r in fy.iterrows()]
-        rev_chart = charts.bar_chart(cols, vals, ("Net interest income" if lender else
-                                                  "Revenue") + " by fiscal year (Rs crore)")
+        label = ("Net premium earned" if insurer else "Net interest income" if lender
+                 else "Revenue")
+        rev_chart = charts.bar_chart(cols, vals, f"{label} by fiscal year (Rs crore)")
     return ({"cols": cols, "rows": rows if len(fy) else []},
             {"cols": cols, "rows": rrows if len(fy) else []}, rev_chart, ratio_chart)
 
@@ -315,12 +324,16 @@ def build_context(con: duckdb.DuckDBPyConnection, symbol: str, val_cfg: Valuatio
 
     w = (fundamentals(con, ("Q", "FY", "BS"), as_of=as_of, isins=[isin]) if as_of
          else pd.DataFrame())
-    fy_t, ratio_t, rev_chart, ratio_chart = (_fy_tables(w, lender) if len(w) else
+    insurer = s["valuation_model"] == "insurance"
+    fy_t, ratio_t, rev_chart, ratio_chart = (_fy_tables(w, lender, insurer) if len(w) else
                                              ({"rows": []}, {"rows": []}, None, None))
     q_t = _q_table(w, lender) if len(w) else {"rows": []}
 
     balance = []
-    if lender:
+    if insurer:
+        balance = [("Net worth (Rs cr)", cr(m.get("bs_equity_owners"))),
+                   ("Investments (Rs cr)", cr(m.get("bs_investments")))]
+    elif lender:
         balance = [("Advances (Rs cr)", cr(m.get("bs_advances"))),
                    ("Deposits (Rs cr)", cr(m.get("bs_deposits"))),
                    ("Net worth (Rs cr)", cr(m.get("bs_equity_owners"))),
